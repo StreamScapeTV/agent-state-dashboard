@@ -1,6 +1,6 @@
-import { verifyCloudflareAccess } from "../_lib/access.js";
-import { AgentStateReadError, readOverview } from "../_lib/agent-state.js";
-import { isConfiguredProject } from "../_lib/config.js";
+import { verifyCloudflareAccess } from "../../pages-server/access.js";
+import { AgentStateReadError, readOverview } from "../../pages-server/agent-state.js";
+import { isConfiguredProject } from "../../pages-server/config.js";
 
 function json(body, status = 200) {
   return Response.json(body, {
