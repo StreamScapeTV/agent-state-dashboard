@@ -1,28 +1,25 @@
 # Agent State Control Room
 
-Private, read-only StreamScapeTV dashboard for the current Agent State authority. The UI is a committed Next.js static export served directly by Cloudflare Pages; authenticated data reads run only in Cloudflare Pages Functions.
+Private, read-only StreamScapeTV dashboard for the current Agent State authority. The repository commits the complete Cloudflare Pages output: static Next.js assets plus a precompiled advanced-mode Worker for authenticated API reads.
 
 ## Architecture
 
 ```text
 Browser
   -> Cloudflare Access SSO
-     -> committed static assets from out/
-     -> /api/* Cloudflare Pages Functions
-        -> verify Cf-Access-Jwt-Assertion
-        -> encrypted AGENT_STATE_SUPABASE_SECRET_KEY
-           -> agent_api.get_project_state
-           -> agent_api.get_agent_state
-           -> agent_api.get_storage_budget
+     -> committed out/_worker.js
+        -> /api/*: verify Cf-Access-Jwt-Assertion
+                   -> encrypted AGENT_STATE_SUPABASE_SECRET_KEY
+                      -> agent_api.get_project_state
+                      -> agent_api.get_agent_state
+                      -> agent_api.get_storage_budget
+        -> everything else: env.ASSETS.fetch(request)
+                            -> committed static files in out/
 ```
 
 The browser never receives a Supabase credential. The repository contains no secret value, no Agent State mutation code, and no direct query of `agent_private` tables. Prompt bodies are deliberately not returned to the dashboard client.
 
-`public/_routes.json` limits Pages Function invocation to `/api/*`, so the dashboard HTML, CSS, JavaScript, and other assets are served directly from `out/`.
-
-## Why Pages Functions still exist
-
-A truly static browser bundle cannot safely contain the Supabase secret/service-role credential. Pages Functions are therefore the narrow server-side boundary for read-only Agent State RPCs. Cloudflare deploys those Functions automatically from the root `/functions` directory when the Git-connected Pages project deploys; there is no GitHub-to-Cloudflare deployment workflow.
+`out/_worker.js` is generated before merge from the reviewed `/functions/api/*` entrypoints and `/pages-server` helpers. Because `_worker.js` is already in the Pages output directory, Cloudflare Pages uses advanced mode and does not need to compile the application or the Function sources during deployment.
 
 ## Agent discovery
 
@@ -38,7 +35,7 @@ Connect `StreamScapeTV/agent-state-dashboard` to Cloudflare Pages using Git inte
 - Build command: leave blank (or `exit 0` if the UI requires a command)
 - Build output directory: `out`
 
-The repository already contains the built static output. Source changes must regenerate and commit `out/` before merge so a `main` deployment never depends on Cloudflare building the Next.js application.
+The repository already contains the complete deployable output in `out/`, including `out/_worker.js`. Source changes must regenerate and commit `out/` before merge so a `main` deployment never depends on Cloudflare running `next build` or bundling the API Worker.
 
 Configure these **encrypted Pages secrets** under the production project:
 
@@ -46,9 +43,9 @@ Configure these **encrypted Pages secrets** under the production project:
 - `TEAM_DOMAIN` — Cloudflare Access team domain, including `https://`
 - `POLICY_AUD` — Access application audience tag
 
-The Agent State Supabase URL is public routing metadata and is fixed in the Pages Function source as `https://fvbaxyklaclgdzyhybbr.supabase.co`.
+The Agent State Supabase URL is public routing metadata and is fixed in the server source as `https://fvbaxyklaclgdzyhybbr.supabase.co`.
 
-Protect the Pages hostname with a Cloudflare Access self-hosted application and the desired SSO identity provider/policy. The `/api/*` Functions independently verify the signed Access JWT before returning data. For a security-sensitive deployment, configure Pages Functions to fail closed rather than serving protected routes when Functions cannot execute.
+Protect the Pages hostname with a Cloudflare Access self-hosted application and the desired SSO identity provider/policy. The advanced-mode Worker independently verifies the signed Access JWT before returning `/api/*` data. Static assets are served through the Pages `ASSETS` binding.
 
 ## Supabase boundary
 
@@ -69,20 +66,20 @@ npm install
 npm run dev
 ```
 
-Static export and Pages Function validation:
+Generate the complete Pages output:
 
 ```bash
 npm test
 npm run typecheck
-npm run build
-npm run pages:functions
+npm run pages:build
 ```
 
-`npm run build` regenerates `out/`. Commit the resulting `out/` changes together with source changes before merging to `main`.
+`npm run pages:build` regenerates the static Next.js export and then precompiles the Pages API boundary into `out/_worker.js`. Commit all resulting `out/` changes together with source changes before merging to `main`.
 
-For local Pages Function testing, put the three runtime secrets in ignored `.dev.vars`, run `npm run build`, then:
+For local full Pages testing, put the three runtime secrets in ignored `.dev.vars`, generate the output, then run:
 
 ```bash
+npm run pages:build
 npm run pages:dev
 ```
 
@@ -90,4 +87,4 @@ Never commit `.dev.vars` or any Supabase credential.
 
 ## CI
 
-`.github/workflows/ci.yml` validates the exact source SHA, read-only boundary tests, TypeScript, the Next.js static export, the Pages Functions bundle, and that the committed `out/` tree exactly matches a fresh build. Cloudflare deployment itself is owned by Pages Git integration, not GitHub Actions.
+`.github/workflows/ci.yml` validates the exact source SHA, read-only boundary tests, TypeScript, the complete prebuilt Pages output, absence of credentials in browser assets, advanced-mode asset fallback, and that committed `out/` exactly matches a fresh build. Cloudflare deployment itself is owned by Pages Git integration, not GitHub Actions.
