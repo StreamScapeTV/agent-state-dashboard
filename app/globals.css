@@ -1,0 +1,25 @@
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(39, 213, 198, 0.10), transparent 30rem),
+    radial-gradient(circle at 92% 12%, rgba(124, 92, 255, 0.10), transparent 32rem),
+    #071018;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(39, 213, 198, 0.28);
+}
+
+code,
+pre {
+  font-family: var(--font-mono, "SFMono-Regular", Consolas, "Liberation Mono", monospace);
+}

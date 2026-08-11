@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "agent-state-dashboard",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-08-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    "AGENT_STATE_PROJECTS": "agent-state-supabase,ci-workflows,iptv-backend,iptv-android,iptv-apple,StreamScapeWeb,streamscape-media,flux"
+  },
+  "secrets": {
+    "required": [
+      "AGENT_STATE_SUPABASE_URL",
+      "AGENT_STATE_SUPABASE_SECRET_KEY",
+      "TEAM_DOMAIN",
+      "POLICY_AUD"
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.05
+    }
+  }
+}

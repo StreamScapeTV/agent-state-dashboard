@@ -1,0 +1,15 @@
+node_modules/
+.next/
+.open-next/
+.wrangler/
+.wrangler-dry-run/
+coverage/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+cloudflare-env.d.ts
+package-lock.json
