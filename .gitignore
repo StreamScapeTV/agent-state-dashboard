@@ -1,6 +1,6 @@
 node_modules/
 .next/
-.open-next/
+.pages-functions-dist/
 .wrangler/
 .wrangler-dry-run/
 coverage/
@@ -11,5 +11,4 @@ coverage/
 !.env.example
 .dev.vars
 .dev.vars.*
-cloudflare-env.d.ts
 package-lock.json
