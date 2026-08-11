@@ -45,10 +45,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           node <<'NODE'
+          const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
           const payload = {
             state: "pending",
             context: "deploy/cloudflare",
             description: "Cloudflare Worker deployment is running",
+            target_url: runUrl,
           };
           const url = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/statuses/${process.env.GITHUB_SHA}`;
           const response = await fetch(url, {
@@ -119,13 +121,14 @@ jobs:
         run: |
           node <<'NODE'
           const state = process.env.DEPLOY_JOB_STATUS === "success" ? "success" : "failure";
-          const targetUrl = (process.env.DEPLOYMENT_URL || "").trim();
+          const deploymentUrl = (process.env.DEPLOYMENT_URL || "").trim();
+          const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
           const payload = {
             state,
             context: "deploy/cloudflare",
             description: state === "success" ? "Cloudflare Worker deployment succeeded" : "Cloudflare Worker deployment failed",
+            target_url: state === "success" && /^https:\/\//.test(deploymentUrl) ? deploymentUrl : runUrl,
           };
-          if (/^https:\/\//.test(targetUrl)) payload.target_url = targetUrl;
 
           const url = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/statuses/${process.env.GITHUB_SHA}`;
           const response = await fetch(url, {
