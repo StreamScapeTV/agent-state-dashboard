@@ -13,11 +13,43 @@ jobs:
     name: CI / Dashboard validation
     runs-on: [linux, amd64, general]
     timeout-minutes: 35
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - name: Check out source
+      - name: Admit exact source
+        shell: bash
+        env:
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request)
+              test "${PR_HEAD_REPOSITORY}" = "${GITHUB_REPOSITORY}"
+              test "${SOURCE_SHA}" = "${PR_HEAD_SHA}"
+              ;;
+            push)
+              test "${SOURCE_SHA}" = "${GITHUB_SHA}"
+              ;;
+            *)
+              echo "Unsupported CI event: ${GITHUB_EVENT_NAME}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Check out exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 1
+          clean: true
           persist-credentials: false
+          set-safe-directory: false
+
+      - name: Verify exact source
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
 
       - name: Set up Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
