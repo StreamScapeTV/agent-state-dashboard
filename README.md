@@ -57,24 +57,25 @@ The existing Supabase project must already expose `agent_api` through the Data A
 
 Do not modify the Supabase project from this repository. If the existing API/grants are insufficient, the dashboard fails closed and reports the configuration problem.
 
-## Development
+## Development and artifact refresh
 
-Use Node `22.18.0` or newer.
+Use Node `22.18.0` or newer and the committed npm lockfile.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-Generate the complete Pages output:
+Generate and validate the complete Pages output before merging source changes:
 
 ```bash
 npm test
 npm run typecheck
 npm run pages:build
+git diff --exit-code -- package-lock.json out
 ```
 
-`npm run pages:build` regenerates the static Next.js export and then precompiles the Pages API boundary into `out/_worker.js`. Commit all resulting `out/` changes together with source changes before merging to `main`.
+`npm run pages:build` regenerates the static Next.js export and then precompiles the Pages API boundary into `out/_worker.js`. If source changes intentionally alter the artifact, commit the resulting `out/` changes together with the source changes, then rerun the commands above until the tree is stable.
 
 For local full Pages testing, put the three runtime secrets in ignored `.dev.vars`, generate the output, then run:
 
@@ -85,6 +86,8 @@ npm run pages:dev
 
 Never commit `.dev.vars` or any Supabase credential.
 
-## CI
+## GitHub and deployment automation
 
-`.github/workflows/ci.yml` validates the exact source SHA, read-only boundary tests, TypeScript, the complete prebuilt Pages output, absence of credentials in browser assets, advanced-mode asset fallback, and that committed `out/` exactly matches a fresh build. Cloudflare deployment itself is owned by Pages Git integration, not GitHub Actions.
+This repository intentionally contains **no GitHub Actions build or Cloudflare deployment workflow**. Cloudflare Pages Git integration owns deployment from `main` and consumes the already-committed `out/` directory directly.
+
+The organization-wide `ci-workflows` repository currently has active shared-registration work and its browser-only static-export contract intentionally rejects `_worker.js`. Do not add a product-local workflow with concrete runner labels as a workaround. When central CI gains a reviewed profile for a prebuilt Pages advanced-mode artifact, adopt it through a thin semantic caller.
