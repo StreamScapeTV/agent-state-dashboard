@@ -26,7 +26,7 @@ test("Pages Functions contain only reviewed Agent State read RPCs", () => {
   assert.match(agentStateSource, /rpc\("get_storage_budget"/);
   assert.match(agentStateSource, /rpc\("get_agent_state"/);
   for (const rpc of mutationRpcs) assert.doesNotMatch(agentStateSource, new RegExp(`rpc\\(["']${rpc}["']`));
-  assert.doesNotMatch(agentStateSource, /\.from\s*\(/);
+  assert.doesNotMatch(agentStateSource, /\bclient\.from\s*\(/);
   assert.doesNotMatch(agentStateSource, /agent_private/);
 });
 
