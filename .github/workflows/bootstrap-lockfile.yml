@@ -37,12 +37,15 @@ jobs:
         shell: bash
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
-      - name: Emit compressed lockfile for connector capture
+      - name: Emit compressed lockfile chunks for connector capture
         shell: bash
         run: |
           set -Eeuo pipefail
-          echo 'LOCKFILE_GZIP_BASE64_BEGIN'
-          gzip -9c package-lock.json | base64 -w0
-          echo
-          echo 'LOCKFILE_GZIP_BASE64_END'
+          gzip -9c package-lock.json | base64 -w0 > package-lock.json.gz.b64
+          split -b 20000 -d -a 2 package-lock.json.gz.b64 lock-chunk-
+          for chunk in lock-chunk-*; do
+            printf 'LOCKFILE_%s=' "${chunk##*-}"
+            cat "${chunk}"
+            echo
+          done
           sha256sum package-lock.json
