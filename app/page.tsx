@@ -14,7 +14,7 @@ export default async function Home() {
     return (
       <Container maxWidth="sm" sx={{ minHeight: "100vh", display: "grid", placeItems: "center", py: 4 }}>
         <Paper sx={{ p: { xs: 3, sm: 5 }, width: "100%", border: "1px solid", borderColor: "divider" }}>
-          <Stack spacing={2.5} alignItems="flex-start">
+          <Stack spacing={2.5} sx={{ alignItems: "flex-start" }}>
             <Box sx={{ width: 52, height: 52, borderRadius: 3, bgcolor: "rgba(39,213,198,0.1)", color: "primary.main", display: "grid", placeItems: "center" }}>
               <LockRounded />
             </Box>
