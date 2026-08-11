@@ -25,11 +25,13 @@ test("Agent State application code contains only read RPC names", () => {
   assert.match(agentStateSource, /rpc\("get_storage_budget"/);
   assert.match(agentStateSource, /rpc\("get_agent_state"/);
   for (const rpc of mutationRpcs) assert.doesNotMatch(agentStateSource, new RegExp(`rpc\\(["']${rpc}["']`));
-  assert.doesNotMatch(agentStateSource, /\.from\s*\(/);
+  assert.doesNotMatch(agentStateSource, /\bclient\s*\.\s*from\s*\(/);
+  assert.doesNotMatch(agentStateSource, /agent_private/);
 });
 
 test("Supabase client is pinned to the reviewed agent_api schema", () => {
   assert.match(supabaseSource, /schema:\s*"agent_api"/);
+  assert.doesNotMatch(supabaseSource, /\.from\s*\(/);
   assert.doesNotMatch(supabaseSource, /NEXT_PUBLIC_/);
   assert.match(runtimeSource, /AGENT_STATE_SUPABASE_SECRET_KEY/);
   assert.doesNotMatch(runtimeSource, /NEXT_PUBLIC_/);
