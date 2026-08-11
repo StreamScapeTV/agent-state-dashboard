@@ -15,7 +15,7 @@ Browser
            -> agent_api.get_storage_budget
 ```
 
-The browser never receives a Supabase URL/key pair and the repository contains no credential values. The application has no Agent State mutation code and never queries `agent_private` tables. API routes validate Cloudflare Access again even when the hostname is already protected by Access.
+The browser never receives a Supabase credential and the repository contains no credential values. The application has no Agent State mutation code and never queries `agent_private` tables. API routes validate Cloudflare Access again even when the hostname is already protected by Access.
 
 Prompt bodies are deliberately not returned to the dashboard client. The UI shows whether a prompt exists and its size, while rendering the current actor state, work, resource keys, and coordination cells needed for operations.
 
@@ -25,9 +25,8 @@ The current Agent State API intentionally has no list-all-agents RPC. The suppor
 
 ## Required Cloudflare configuration
 
-The Worker requires these **server-only secrets**:
+The Agent State Supabase API URL is public project metadata and is pinned as `AGENT_STATE_SUPABASE_URL` in `wrangler.jsonc`. It is not a credential. The Worker requires these **server-only secrets**:
 
-- `AGENT_STATE_SUPABASE_URL`
 - `AGENT_STATE_SUPABASE_SECRET_KEY` — use a current Supabase secret key or compatible server-side service-role credential; never a browser key
 - `TEAM_DOMAIN` — Cloudflare Access team domain, including `https://`
 - `POLICY_AUD` — the Access application's audience tag
@@ -56,7 +55,7 @@ npm run cf-typegen
 npm run dev
 ```
 
-For local authenticated data access, provide the four required server-only values through an ignored `.dev.vars` file. Never commit that file.
+For local authenticated data access, provide the three required server-only secret values through an ignored `.dev.vars` file. The public Supabase URL comes from `wrangler.jsonc`. Never commit `.dev.vars`.
 
 Validation:
 
@@ -75,9 +74,8 @@ npm run cf:build
 
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
-- `AGENT_STATE_SUPABASE_URL`
 - `AGENT_STATE_SUPABASE_SECRET_KEY`
 - `TEAM_DOMAIN`
 - `POLICY_AUD`
 
-The workflow builds the OpenNext Worker first, then `wrangler-action` uploads the four runtime values as Worker secrets. No credential is embedded in the Next.js browser bundle.
+The workflow fails before build if any required production value is absent, never prints secret values, builds the OpenNext Worker, and then uses the immutable packaged Cloudflare Wrangler Action v4.0.0 release to deploy and upload the three runtime secrets. It publishes a `deploy/cloudflare` commit status with the Actions run on failure and the Worker deployment URL on success. No credential is embedded in the Next.js browser bundle.
