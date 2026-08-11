@@ -1,8 +1,8 @@
 name: Bootstrap package lock
 
 on:
-  push:
-    branches: [issue/1-bootstrap-dashboard]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -12,14 +12,20 @@ jobs:
     name: Generate deterministic package lock
     runs-on: [linux, amd64, general]
     timeout-minutes: 20
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: Check out exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.SOURCE_SHA }}
           fetch-depth: 1
           persist-credentials: false
           set-safe-directory: false
+
+      - name: Verify exact source
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
 
       - name: Set up Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
