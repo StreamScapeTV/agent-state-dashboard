@@ -1,0 +1,68 @@
+name: Deploy Cloudflare Worker
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-state-dashboard-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy / Cloudflare Workers
+    runs-on: [linux, amd64, general]
+    timeout-minutes: 35
+    environment: production
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Validate read-only boundary
+        run: npm test
+
+      - name: Generate Cloudflare binding types
+        run: npm run cf-typegen
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build OpenNext Worker
+        run: npm run cf:build
+
+      - name: Deploy Worker and set server-only secrets
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.114.0"
+          command: deploy
+          secrets: |
+            AGENT_STATE_SUPABASE_URL
+            AGENT_STATE_SUPABASE_SECRET_KEY
+            TEAM_DOMAIN
+            POLICY_AUD
+        env:
+          AGENT_STATE_SUPABASE_URL: ${{ secrets.AGENT_STATE_SUPABASE_URL }}
+          AGENT_STATE_SUPABASE_SECRET_KEY: ${{ secrets.AGENT_STATE_SUPABASE_SECRET_KEY }}
+          TEAM_DOMAIN: ${{ secrets.TEAM_DOMAIN }}
+          POLICY_AUD: ${{ secrets.POLICY_AUD }}
+
+      - name: Clean disposable deployment state
+        if: always()
+        run: rm -rf node_modules .next .open-next .wrangler cloudflare-env.d.ts package-lock.json
