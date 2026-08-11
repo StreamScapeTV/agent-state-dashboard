@@ -110,7 +110,7 @@ function MetricCard({
   return (
     <Card sx={{ minHeight: 154 }}>
       <CardContent>
-        <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+        <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
           <Box>
             <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: "0.12em" }}>
               {label}
@@ -146,7 +146,7 @@ function ActorCard({ actor }: { actor: ActorSnapshot }) {
   return (
     <Card sx={{ height: "100%", overflow: "hidden" }}>
       <CardContent>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+        <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1 }}>
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="h6" noWrap>
               {actor.identity}
@@ -312,9 +312,9 @@ export function DashboardClient({ projects, viewer }: DashboardClientProps) {
             `linear-gradient(120deg, ${alpha(theme.palette.primary.main, 0.12)}, ${alpha(theme.palette.secondary.main, 0.08)} 48%, rgba(13,24,35,0.92) 78%)`,
         }}
       >
-        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={3}>
+        <Stack direction={{ xs: "column", md: "row" }} sx={{ justifyContent: "space-between", gap: 3 }}>
           <Box sx={{ maxWidth: 820 }}>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+            <Stack direction="row" spacing={1} sx={{ mb: 2, alignItems: "center" }}>
               <Chip icon={<ShieldRounded />} label="Cloudflare Access" size="small" color="primary" variant="outlined" />
               <Chip label="Read only" size="small" variant="outlined" />
             </Stack>
@@ -328,12 +328,12 @@ export function DashboardClient({ projects, viewer }: DashboardClientProps) {
               Live, bounded visibility into current projects, active agents, work assignments, resource ownership and coordination.
             </Typography>
           </Box>
-          <Stack alignItems={{ xs: "flex-start", md: "flex-end" }} justifyContent="space-between" gap={2}>
+          <Stack sx={{ alignItems: { xs: "flex-start", md: "flex-end" }, justifyContent: "space-between", gap: 2 }}>
             <Box sx={{ textAlign: { xs: "left", md: "right" } }}>
               <Typography variant="caption" color="text.secondary">
                 SIGNED IN
               </Typography>
-              <Typography variant="body2" fontWeight={700}>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
                 {viewer.email}
               </Typography>
             </Box>
@@ -396,7 +396,7 @@ export function DashboardClient({ projects, viewer }: DashboardClientProps) {
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1.4fr) minmax(320px, 0.6fr)" }, gap: 2, mb: 3 }}>
         <Card>
           <CardContent>
-            <Stack direction="row" justifyContent="space-between" gap={2} sx={{ mb: 2 }}>
+            <Stack direction="row" sx={{ mb: 2, justifyContent: "space-between", gap: 2 }}>
               <Box>
                 <Typography variant="overline" color="text.secondary">CURRENT PROJECT</Typography>
                 <Typography variant="h5">{project}</Typography>
@@ -409,7 +409,7 @@ export function DashboardClient({ projects, viewer }: DashboardClientProps) {
         </Card>
         <Card>
           <CardContent>
-            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 2 }}>
+            <Stack direction="row" spacing={1.25} sx={{ mb: 2, alignItems: "center" }}>
               <StorageRounded color="primary" />
               <Box>
                 <Typography variant="overline" color="text.secondary">STORAGE BUDGET</Typography>
@@ -421,7 +421,7 @@ export function DashboardClient({ projects, viewer }: DashboardClientProps) {
         </Card>
       </Box>
 
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-end" gap={2} sx={{ mb: 2 }}>
+      <Stack direction="row" sx={{ mb: 2, justifyContent: "space-between", alignItems: "flex-end", gap: 2 }}>
         <Box>
           <Typography variant="overline" color="text.secondary">ACTOR DIRECTORY</Typography>
           <Typography variant="h4" sx={{ fontSize: { xs: 28, md: 34 } }}>Current activity</Typography>
