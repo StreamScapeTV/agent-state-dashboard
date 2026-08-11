@@ -35,17 +35,16 @@ jobs:
 
       - name: Generate lockfile only
         shell: bash
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-
-      - name: Emit compressed lockfile chunks for connector capture
-        shell: bash
         run: |
           set -Eeuo pipefail
-          gzip -9c package-lock.json | base64 -w0 > package-lock.json.gz.b64
-          split -b 20000 -d -a 2 package-lock.json.gz.b64 lock-chunk-
-          for chunk in lock-chunk-*; do
-            printf 'LOCKFILE_%s=' "${chunk##*-}"
-            cat "${chunk}"
-            echo
-          done
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           sha256sum package-lock.json
+
+      - name: Upload one-day lockfile artifact
+        uses: actions/upload-artifact@615b319bd27bb32c3d64dca6b6ed6974d5fbe653 # v6.0.0
+        with:
+          name: package-lock-${{ env.SOURCE_SHA }}
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 9
