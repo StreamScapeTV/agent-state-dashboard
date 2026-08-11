@@ -15,7 +15,9 @@ concurrency:
 jobs:
   deploy:
     name: Deploy / Cloudflare Workers
-    runs-on: [linux, amd64, general]
+    # Production repeats the measured OpenNext build on protected exact source;
+    # use the same 4 GiB Node-capable runner class as CI.
+    runs-on: [linux, amd64, mobile]
     timeout-minutes: 35
     environment: production
     env:
