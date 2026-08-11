@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const agentStateSource = await readFile(new URL("../functions/_lib/agent-state.js", import.meta.url), "utf8");
-const configSource = await readFile(new URL("../functions/_lib/config.js", import.meta.url), "utf8");
-const accessSource = await readFile(new URL("../functions/_lib/access.js", import.meta.url), "utf8");
+const agentStateSource = await readFile(new URL("../pages-server/agent-state.js", import.meta.url), "utf8");
+const configSource = await readFile(new URL("../pages-server/config.js", import.meta.url), "utf8");
+const accessSource = await readFile(new URL("../pages-server/access.js", import.meta.url), "utf8");
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 
 const mutationRpcs = [
