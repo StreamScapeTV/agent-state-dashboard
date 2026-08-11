@@ -8,13 +8,13 @@ permissions:
   contents: write
 
 concurrency:
-  group: dashboard-bootstrap-static-output
+  group: dashboard-bootstrap-static-output-mobile
   cancel-in-progress: true
 
 jobs:
   materialize:
     if: github.actor != 'github-actions[bot]'
-    runs-on: [linux, amd64, general]
+    runs-on: [linux, amd64, mobile]
     timeout-minutes: 35
     env:
       SOURCE_SHA: ${{ github.sha }}
