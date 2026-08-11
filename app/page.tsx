@@ -12,5 +12,10 @@ const PROJECTS = [
 ];
 
 export default function Home() {
-  return <DashboardClient projects={PROJECTS} />;
+  return (
+    <DashboardClient
+      projects={PROJECTS}
+      viewer={{ email: "Cloudflare Access SSO", subject: "cloudflare-access" }}
+    />
+  );
 }
