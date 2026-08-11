@@ -1,7 +1,4 @@
-import "server-only";
-
-import { createAgentStateClient } from "@/lib/supabase";
-import type { ActorSnapshot, JsonValue, OverviewPayload } from "@/types/dashboard";
+import { createAgentStateClient } from "./config.js";
 
 export const ACTOR_BATCH_SIZE = 28;
 export const ALL_IDENTITIES = [
@@ -9,17 +6,17 @@ export const ALL_IDENTITIES = [
   ...Array.from({ length: 100 }, (_, index) => `Agent ${index + 1}`),
   ...Array.from({ length: 100 }, (_, index) => `Codex ${index + 1}`),
   "Dependabot",
-] as const;
+];
 export const ACTOR_BATCH_COUNT = Math.ceil(ALL_IDENTITIES.length / ACTOR_BATCH_SIZE);
 
 export class AgentStateReadError extends Error {
-  constructor(message: string) {
+  constructor(message) {
     super(message);
     this.name = "AgentStateReadError";
   }
 }
 
-function readError(error: { code?: string; message?: string } | null): AgentStateReadError {
+function readError(error) {
   const code = error?.code ?? "";
   const message = error?.message?.toLowerCase() ?? "";
   if (code === "PGRST106" || message.includes("schema")) {
@@ -33,38 +30,34 @@ function readError(error: { code?: string; message?: string } | null): AgentStat
   return new AgentStateReadError("Agent State is temporarily unavailable.");
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function toJson(value: unknown): JsonValue {
+function toJson(value) {
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return value;
   }
-  if (Array.isArray(value)) {
-    return value.map(toJson);
-  }
+  if (Array.isArray(value)) return value.map(toJson);
   if (isRecord(value)) {
     return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, toJson(child)]));
   }
   return String(value);
 }
 
-function toJsonArray(value: unknown): JsonValue[] {
+function toJsonArray(value) {
   return Array.isArray(value) ? value.map(toJson) : [];
 }
 
-function toStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+function toStringArray(value) {
+  return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
 }
 
-function deriveStatus(state: JsonValue, work: JsonValue[], resources: string[], coordination: JsonValue[]): string {
+function deriveStatus(state, work, resources, coordination) {
   if (isRecord(state)) {
     for (const key of ["status", "lifecycle", "phase"]) {
       const value = state[key];
-      if (typeof value === "string" && value.trim()) {
-        return value;
-      }
+      if (typeof value === "string" && value.trim()) return value;
     }
   }
   if (work.length > 0) return "working";
@@ -73,11 +66,11 @@ function deriveStatus(state: JsonValue, work: JsonValue[], resources: string[], 
   return "assigned";
 }
 
-function hasState(state: JsonValue): boolean {
+function hasState(state) {
   return isRecord(state) ? Object.keys(state).length > 0 : state !== null;
 }
 
-function normalizeActor(identity: string, raw: unknown): ActorSnapshot | null {
+function normalizeActor(identity, raw) {
   if (!isRecord(raw)) return null;
 
   const prompt = raw.prompt;
@@ -104,8 +97,8 @@ function normalizeActor(identity: string, raw: unknown): ActorSnapshot | null {
   };
 }
 
-export async function readOverview(project: string): Promise<OverviewPayload> {
-  const client = createAgentStateClient();
+export async function readOverview(env, project) {
+  const client = createAgentStateClient(env);
   const [projectResult, storageResult] = await Promise.all([
     client.rpc("get_project_state", { p_project_key: project }),
     client.rpc("get_storage_budget"),
@@ -124,14 +117,14 @@ export async function readOverview(project: string): Promise<OverviewPayload> {
   };
 }
 
-export async function readActorBatch(project: string, batch: number): Promise<ActorSnapshot[]> {
+export async function readActorBatch(env, project, batch) {
   if (!Number.isInteger(batch) || batch < 0 || batch >= ACTOR_BATCH_COUNT) {
     throw new AgentStateReadError("Invalid actor batch.");
   }
 
   const start = batch * ACTOR_BATCH_SIZE;
   const identities = ALL_IDENTITIES.slice(start, start + ACTOR_BATCH_SIZE);
-  const client = createAgentStateClient();
+  const client = createAgentStateClient(env);
   const results = await Promise.all(
     identities.map(async (identity) => {
       const result = await client.rpc("get_agent_state", {
@@ -143,5 +136,5 @@ export async function readActorBatch(project: string, batch: number): Promise<Ac
     }),
   );
 
-  return results.filter((actor): actor is ActorSnapshot => actor !== null);
+  return results.filter((actor) => actor !== null);
 }

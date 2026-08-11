@@ -1,81 +1,93 @@
 # Agent State Control Room
 
-Private, read-only StreamScapeTV dashboard for the current Agent State authority. It is a Next.js App Router application rendered on Cloudflare Workers with Material UI.
+Private, read-only StreamScapeTV dashboard for the current Agent State authority. The repository commits the complete Cloudflare Pages output: static Next.js assets plus a precompiled advanced-mode Worker for authenticated API reads.
 
-## Security architecture
+## Architecture
 
 ```text
 Browser
   -> Cloudflare Access SSO
-     -> Next.js Worker
-        -> verify Cf-Access-Jwt-Assertion
-        -> server-only Supabase secret key
-           -> agent_api.get_project_state
-           -> agent_api.get_agent_state
-           -> agent_api.get_storage_budget
+     -> committed out/_worker.js
+        -> /api/*: verify Cf-Access-Jwt-Assertion
+                   -> encrypted AGENT_STATE_SUPABASE_SECRET_KEY
+                      -> agent_api.get_project_state
+                      -> agent_api.get_agent_state
+                      -> agent_api.get_storage_budget
+        -> everything else: env.ASSETS.fetch(request)
+                            -> committed static files in out/
 ```
 
-The browser never receives a Supabase credential and the repository contains no credential values. The application has no Agent State mutation code and never queries `agent_private` tables. API routes validate Cloudflare Access again even when the hostname is already protected by Access.
+The browser never receives a Supabase credential. The repository contains no secret value, no Agent State mutation code, and no direct query of `agent_private` tables. Prompt bodies are deliberately not returned to the dashboard client.
 
-Prompt bodies are deliberately not returned to the dashboard client. The UI shows whether a prompt exists and its size, while rendering the current actor state, work, resource keys, and coordination cells needed for operations.
+`out/_worker.js` is generated before merge from the reviewed `/functions/api/*` entrypoints and `/pages-server` helpers. Because `_worker.js` is already in the Pages output directory, Cloudflare Pages uses advanced mode and does not need to compile the application or the Function sources during deployment.
 
-## Why actor scanning is batched
+## Agent discovery
 
-The current Agent State API intentionally has no list-all-agents RPC. The supported identity space is bounded to `Orchestrator`, `Dependabot`, `Agent 1..100`, and `Codex 1..100`. The Worker scans those exact identities through `get_agent_state` in batches of 28 and discards empty actors. It never circumvents the RPC boundary with a table query.
+The current Agent State API intentionally has no list-all-agents RPC. The supported identity space is bounded to `Orchestrator`, `Dependabot`, `Agent 1..100`, and `Codex 1..100`. The API scans those exact identities through `get_agent_state` in batches of 28 and discards empty actors. It never circumvents the RPC boundary with a table query.
 
-## Required Cloudflare configuration
+## Cloudflare Pages setup
 
-The Agent State Supabase API URL is public project metadata and is pinned as `AGENT_STATE_SUPABASE_URL` in `wrangler.jsonc`. It is not a credential. The Worker requires these **server-only secrets**:
+Connect `StreamScapeTV/agent-state-dashboard` to Cloudflare Pages using Git integration and use:
 
-- `AGENT_STATE_SUPABASE_SECRET_KEY` — use a current Supabase secret key or compatible server-side service-role credential; never a browser key
+- Production branch: `main`
+- Root directory: repository root
+- Framework preset: None
+- Build command: leave blank (or `exit 0` if the UI requires a command)
+- Build output directory: `out`
+
+The repository already contains the complete deployable output in `out/`, including `out/_worker.js`. Source changes must regenerate and commit `out/` before merge so a `main` deployment never depends on Cloudflare running `next build` or bundling the API Worker.
+
+Configure these **encrypted Pages secrets** under the production project:
+
+- `AGENT_STATE_SUPABASE_SECRET_KEY`
 - `TEAM_DOMAIN` — Cloudflare Access team domain, including `https://`
-- `POLICY_AUD` — the Access application's audience tag
+- `POLICY_AUD` — Access application audience tag
 
-`AGENT_STATE_PROJECTS` is a non-secret comma-separated allowlist in `wrangler.jsonc`. Add or remove project keys there; the browser cannot request a project outside the allowlist.
+The Agent State Supabase URL is public routing metadata and is fixed in the server source as `https://fvbaxyklaclgdzyhybbr.supabase.co`.
 
-Configure a Cloudflare Access self-hosted application for the Worker hostname and attach the desired SSO identity provider/policy. The application itself verifies the `Cf-Access-Jwt-Assertion` signature, issuer, and audience before returning any data, so a direct unprotected Worker URL still fails closed.
+Protect the Pages hostname with a Cloudflare Access self-hosted application and the desired SSO identity provider/policy. The advanced-mode Worker independently verifies the signed Access JWT before returning `/api/*` data. Static assets are served through the Pages `ASSETS` binding.
 
-## Supabase read-only prerequisite
+## Supabase boundary
 
-The existing Supabase project must already expose the `agent_api` schema through its Data API for server-side PostgREST RPC calls. If it does not, this dashboard reports a configuration error and stops. **Do not change the Supabase project from this repository.** Exposing a schema or changing grants is owner-reviewed Supabase work outside this dashboard task.
-
-Only these existing RPCs are consumed:
+The existing Supabase project must already expose `agent_api` through the Data API and allow the configured server credential to execute these existing read RPCs:
 
 - `agent_api.get_project_state(text)`
 - `agent_api.get_agent_state(text,text)`
 - `agent_api.get_storage_budget()`
 
-## Local development
+Do not modify the Supabase project from this repository. If the existing API/grants are insufficient, the dashboard fails closed and reports the configuration problem.
 
-Use Node `22.18.0` or newer. Install dependencies, generate Wrangler binding types, then run Next.js:
+## Development and artifact refresh
+
+Use Node `22.18.0` or newer and the committed npm lockfile.
 
 ```bash
-npm install
-npm run cf-typegen
+npm ci
 npm run dev
 ```
 
-For local authenticated data access, provide the three required server-only secret values through an ignored `.dev.vars` file. The public Supabase URL comes from `wrangler.jsonc`. Never commit `.dev.vars`.
-
-Validation:
+Generate and validate the complete Pages output before merging source changes:
 
 ```bash
 npm test
-npm run cf-typegen
 npm run typecheck
-npm run cf:build
+npm run pages:build
+git diff --exit-code -- package-lock.json out
 ```
 
-## CI and deployment
+`npm run pages:build` regenerates the static Next.js export and then precompiles the Pages API boundary into `out/_worker.js`. If source changes intentionally alter the artifact, commit the resulting `out/` changes together with the source changes, then rerun the commands above until the tree is stable.
 
-`.github/workflows/ci.yml` runs on the organization-managed `[linux, amd64, mobile]` capability set. The OpenNext production bundle materially exceeded the 1 GiB general runner's practical envelope, so CI uses the documented 4 GiB exact-source Node-capable class and creates no routine Actions artifacts.
+For local full Pages testing, put the three runtime secrets in ignored `.dev.vars`, generate the output, then run:
 
-`main` deploys with `.github/workflows/deploy.yml`. Configure these GitHub `production` environment secrets before deployment:
+```bash
+npm run pages:build
+npm run pages:dev
+```
 
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
-- `AGENT_STATE_SUPABASE_SECRET_KEY`
-- `TEAM_DOMAIN`
-- `POLICY_AUD`
+Never commit `.dev.vars` or any Supabase credential.
 
-The workflow fails before build if any required production value is absent, never prints secret values, builds the OpenNext Worker, and then uses the immutable packaged Cloudflare Wrangler Action v4.0.0 release to deploy and upload the three runtime secrets. It publishes a `deploy/cloudflare` commit status with the Actions run on failure and the Worker deployment URL on success. No credential is embedded in the Next.js browser bundle.
+## GitHub and deployment automation
+
+This repository intentionally contains **no GitHub Actions build or Cloudflare deployment workflow**. Cloudflare Pages Git integration owns deployment from `main` and consumes the already-committed `out/` directory directly.
+
+The organization-wide `ci-workflows` repository currently has active shared-registration work and its browser-only static-export contract intentionally rejects `_worker.js`. Do not add a product-local workflow with concrete runner labels as a workaround. When central CI gains a reviewed profile for a prebuilt Pages advanced-mode artifact, adopt it through a thin semantic caller.

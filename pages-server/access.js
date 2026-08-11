@@ -1,28 +1,28 @@
-import "server-only";
-
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { getAccessConfig } from "@/lib/runtime-env";
-import type { ViewerIdentity } from "@/types/dashboard";
+import { requiredEnv } from "./config.js";
 
-interface HeaderReader {
-  get(name: string): string | null;
+const jwksCache = new Map();
+
+function getJwks(issuer) {
+  let jwks = jwksCache.get(issuer);
+  if (!jwks) {
+    jwks = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));
+    jwksCache.set(issuer, jwks);
+  }
+  return jwks;
 }
 
-type AccessResult =
-  | { ok: true; viewer: ViewerIdentity }
-  | { ok: false; reason: string };
-
-export async function verifyCloudflareAccess(headers: HeaderReader): Promise<AccessResult> {
+export async function verifyCloudflareAccess(headers, env) {
   const assertion = headers.get("cf-access-jwt-assertion");
   if (!assertion) {
     return { ok: false, reason: "Sign in through Cloudflare Access to continue." };
   }
 
   try {
-    const { teamDomain, policyAudience } = getAccessConfig();
+    const teamDomain = requiredEnv(env, "TEAM_DOMAIN").replace(/\/$/, "");
+    const policyAudience = requiredEnv(env, "POLICY_AUD");
     const issuer = new URL(teamDomain).origin;
-    const jwks = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));
-    const { payload } = await jwtVerify(assertion, jwks, {
+    const { payload } = await jwtVerify(assertion, getJwks(issuer), {
       issuer,
       audience: policyAudience,
     });

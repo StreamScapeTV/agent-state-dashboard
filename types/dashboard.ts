@@ -24,6 +24,7 @@ export interface OverviewPayload {
   actorBatchCount: number;
   actorCapacity: number;
   scannedAt: string;
+  viewer: ViewerIdentity;
 }
 
 export interface ActorsBatchPayload {
