@@ -1,12 +1,12 @@
-import { verifyCloudflareAccess } from "../_lib/access.js";
+import { verifyCloudflareAccess } from "../../pages-server/access.js";
 import {
   ACTOR_BATCH_COUNT,
   ACTOR_BATCH_SIZE,
   ALL_IDENTITIES,
   AgentStateReadError,
   readActorBatch,
-} from "../_lib/agent-state.js";
-import { isConfiguredProject } from "../_lib/config.js";
+} from "../../pages-server/agent-state.js";
+import { isConfiguredProject } from "../../pages-server/config.js";
 
 function json(body, status = 200) {
   return Response.json(body, {
