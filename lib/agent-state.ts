@@ -80,8 +80,9 @@ function hasState(state: JsonValue): boolean {
 function normalizeActor(identity: string, raw: unknown): ActorSnapshot | null {
   if (!isRecord(raw)) return null;
 
-  const promptAssigned = typeof raw.prompt === "string";
-  const promptLength = promptAssigned ? raw.prompt.length : 0;
+  const prompt = raw.prompt;
+  const promptAssigned = typeof prompt === "string";
+  const promptLength = promptAssigned ? prompt.length : 0;
   const state = toJson(raw.state ?? {});
   const work = toJsonArray(raw.work);
   const resources = toStringArray(raw.resources);
