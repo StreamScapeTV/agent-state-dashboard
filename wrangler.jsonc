@@ -9,11 +9,11 @@
     "binding": "ASSETS"
   },
   "vars": {
-    "AGENT_STATE_PROJECTS": "agent-state-supabase,ci-workflows,iptv-backend,iptv-android,iptv-apple,StreamScapeWeb,streamscape-media,flux"
+    "AGENT_STATE_PROJECTS": "agent-state-supabase,ci-workflows,iptv-backend,iptv-android,iptv-apple,StreamScapeWeb,streamscape-media,flux",
+    "AGENT_STATE_SUPABASE_URL": "https://fvbaxyklaclgdzyhybbr.supabase.co"
   },
   "secrets": {
     "required": [
-      "AGENT_STATE_SUPABASE_URL",
       "AGENT_STATE_SUPABASE_SECRET_KEY",
       "TEAM_DOMAIN",
       "POLICY_AUD"
