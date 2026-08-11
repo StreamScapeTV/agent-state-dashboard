@@ -18,11 +18,24 @@ jobs:
     runs-on: [linux, amd64, general]
     timeout-minutes: 35
     environment: production
+    env:
+      SOURCE_SHA: ${{ github.sha }}
     steps:
-      - name: Check out source
+      - name: Check out exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 1
+          clean: true
           persist-credentials: false
+          set-safe-directory: false
+
+      - name: Verify exact source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
 
       - name: Set up Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -30,7 +43,7 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
 
-      - name: Install dependencies
+      - name: Install exact direct dependencies
         run: npm install --no-audit --no-fund
 
       - name: Validate read-only boundary
@@ -46,11 +59,12 @@ jobs:
         run: npm run cf:build
 
       - name: Deploy Worker and set server-only secrets
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@a61fbea3226347cc885c6d1b26b3f47b48e6c0f8 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.114.0"
+          packageManager: npm
           command: deploy
           secrets: |
             AGENT_STATE_SUPABASE_URL
