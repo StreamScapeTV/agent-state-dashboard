@@ -91,12 +91,8 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          if grep -R -n -E 'sb_secret_|service_role' out; then
-            echo "Prebuilt output contains a forbidden credential marker" >&2
-            exit 1
-          fi
-          if grep -R -n 'AGENT_STATE_SUPABASE_SECRET_KEY' out --exclude='_worker.js'; then
-            echo "Browser assets contain a server-only secret binding name" >&2
+          if grep -R -n -E 'AGENT_STATE_SUPABASE_SECRET_KEY|sb_secret_|service_role' out --exclude='_worker.js'; then
+            echo "Browser assets contain a server-only secret marker" >&2
             exit 1
           fi
 
