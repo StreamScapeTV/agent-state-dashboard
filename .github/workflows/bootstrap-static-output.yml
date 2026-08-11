@@ -1,0 +1,79 @@
+name: Bootstrap committed static output
+
+on:
+  push:
+    branches: [issue/1-pages-static-output]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dashboard-bootstrap-static-output
+  cancel-in-progress: true
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: [linux, amd64, mobile]
+    timeout-minutes: 35
+    env:
+      SOURCE_SHA: ${{ github.sha }}
+    steps:
+      - name: Check out exact branch source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 1
+          clean: true
+          persist-credentials: true
+          set-safe-directory: false
+
+      - name: Verify exact source
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Validate source boundary
+        run: |
+          npm test
+          npm run typecheck
+
+      - name: Build static export and Pages Functions
+        run: |
+          npm run build
+          npm run pages:functions
+
+      - name: Verify generated Pages contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -f out/index.html
+          test -f out/_routes.json
+          test -f out/_headers
+          grep -q '"/api/\*"' out/_routes.json
+          if grep -R -n -E 'AGENT_STATE_SUPABASE_SECRET_KEY|sb_secret_|service_role' out; then
+            echo "Static output contains a forbidden secret marker" >&2
+            exit 1
+          fi
+
+      - name: Commit generated out directory
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git add -f out
+          if git diff --cached --quiet; then
+            echo "Committed out/ already matches this source."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build: materialize static Pages export"
+          git push origin HEAD:issue/1-pages-static-output
