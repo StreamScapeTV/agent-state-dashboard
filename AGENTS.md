@@ -19,7 +19,7 @@ This repository is a read-only visualization client for the separately owned `St
 - Never query the private Agent State tables directly.
 - Supabase secret/service-role credentials are server-only Cloudflare Pages Function secrets. They must never use `NEXT_PUBLIC_*`, be committed, be rendered into static HTML, or be returned by an API route.
 - Browser access is authenticated by Cloudflare Access SSO. Pages Functions must independently verify the signed Access assertion before returning Agent State data.
-- The committed `out/` directory contains only static frontend assets. Sensitive Agent State reads belong only in root-level `/functions/api/*` Pages Functions.
+- The committed `out/` directory contains only static frontend assets. Pages Function entrypoints live under root-level `/functions/api/*`; shared server-only helper modules live under `/pages-server` and may be imported only by Pages Functions, never by the static frontend.
 - Application logging must not include credentials, prompts, unrestricted state payloads, authorization headers, or raw Supabase responses.
 
 ## Stack
