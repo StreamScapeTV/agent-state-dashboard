@@ -9,15 +9,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: dashboard-ci-v2-${{ github.event.pull_request.number || github.ref }}
+  group: dashboard-ci-pages-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   validate:
-    name: CI / Dashboard validation
-    # OpenNext/Next production bundling materially exceeds the 1 GiB general
-    # runner's practical envelope; the documented mobile class provides 4 GiB
-    # and is approved for trusted exact-source Node validation.
+    name: CI / Static Pages validation
     runs-on: [linux, amd64, mobile]
     timeout-minutes: 35
     env:
@@ -70,15 +67,44 @@ jobs:
       - name: Prove read-only boundary
         run: npm test
 
-      - name: Generate Cloudflare binding types
-        run: npm run cf-typegen
-
-      - name: Type-check
+      - name: Type-check static frontend
         run: npm run typecheck
 
-      - name: Build Next.js Worker
-        run: npm run cf:build
+      - name: Preserve committed static output
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -f out/index.html
+          test -f out/_routes.json
+          test -f out/_headers
+          cp -a out "${RUNNER_TEMP}/committed-out"
+
+      - name: Rebuild static export
+        run: npm run build
+
+      - name: Prove committed output is reproducible
+        shell: bash
+        run: diff -qr "${RUNNER_TEMP}/committed-out" out
+
+      - name: Prove secrets are absent from static assets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if grep -R -n -E 'AGENT_STATE_SUPABASE_SECRET_KEY|sb_secret_|service_role' out; then
+            echo "Static output contains a forbidden secret marker" >&2
+            exit 1
+          fi
+
+      - name: Bundle Pages Functions
+        run: npm run pages:functions
+
+      - name: Verify Pages routing contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q '"/api/\*"' out/_routes.json
+          grep -q 'X-Frame-Options: DENY' out/_headers
 
       - name: Clean disposable validation state
         if: always()
-        run: rm -rf node_modules .next .open-next .wrangler cloudflare-env.d.ts package-lock.json
+        run: rm -rf node_modules .next .pages-functions-dist .wrangler package-lock.json "${RUNNER_TEMP}/committed-out"
