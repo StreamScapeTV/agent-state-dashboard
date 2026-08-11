@@ -67,6 +67,35 @@ jobs:
           if (!response.ok) throw new Error(`GitHub deployment status update failed with HTTP ${response.status}`);
           NODE
 
+      - name: Verify production secret presence
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AGENT_STATE_SUPABASE_URL: ${{ secrets.AGENT_STATE_SUPABASE_URL }}
+          AGENT_STATE_SUPABASE_SECRET_KEY: ${{ secrets.AGENT_STATE_SUPABASE_SECRET_KEY }}
+          TEAM_DOMAIN: ${{ secrets.TEAM_DOMAIN }}
+          POLICY_AUD: ${{ secrets.POLICY_AUD }}
+        run: |
+          set -Eeuo pipefail
+          missing=()
+          for name in \
+            CLOUDFLARE_API_TOKEN \
+            CLOUDFLARE_ACCOUNT_ID \
+            AGENT_STATE_SUPABASE_URL \
+            AGENT_STATE_SUPABASE_SECRET_KEY \
+            TEAM_DOMAIN \
+            POLICY_AUD; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("${name}")
+            fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            joined=$(IFS=', '; echo "${missing[*]}")
+            echo "::error::Missing required GitHub production environment secrets: ${joined}"
+            exit 1
+          fi
+
       - name: Set up Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
@@ -90,7 +119,7 @@ jobs:
 
       - name: Deploy Worker and set server-only secrets
         id: cloudflare
-        uses: cloudflare/wrangler-action@a61fbea3226347cc885c6d1b26b3f47b48e6c0f8 # v4.0.0
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
