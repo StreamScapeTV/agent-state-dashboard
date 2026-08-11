@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: dashboard-bootstrap-static-output-general-v2
+  group: dashboard-bootstrap-static-output-general-v3
   cancel-in-progress: true
 
 jobs:
@@ -53,6 +53,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          test -f package-lock.json
           test -f out/index.html
           test -f out/_worker.js
           test -f out/_routes.json
@@ -64,16 +65,17 @@ jobs:
             exit 1
           fi
 
-      - name: Commit generated out directory
+      - name: Commit reproducible deployment inputs and output
         shell: bash
         run: |
           set -Eeuo pipefail
+          git add package-lock.json
           git add -f out
           if git diff --cached --quiet; then
-            echo "Committed out/ already matches this source."
+            echo "Committed lockfile and out/ already match this source."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "build: materialize prebuilt Pages output"
+          git commit -m "build: materialize reproducible prebuilt Pages output"
           git push origin HEAD:issue/1-pages-static-output
