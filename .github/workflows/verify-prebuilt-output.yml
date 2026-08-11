@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: [linux, amd64, general]
+    runs-on: [linux, amd64, mobile]
     timeout-minutes: 35
     env:
       SOURCE_SHA: ${{ github.sha }}
