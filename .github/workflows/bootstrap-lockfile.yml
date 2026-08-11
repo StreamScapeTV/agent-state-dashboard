@@ -1,0 +1,42 @@
+name: Bootstrap package lock
+
+on:
+  push:
+    branches: [issue/1-bootstrap-dashboard]
+
+permissions:
+  contents: read
+
+jobs:
+  lockfile:
+    name: Generate deterministic package lock
+    runs-on: [linux, amd64, general]
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          set-safe-directory: false
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Generate lockfile only
+        shell: bash
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Emit compressed lockfile for connector capture
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo 'LOCKFILE_GZIP_BASE64_BEGIN'
+          gzip -9c package-lock.json | base64 -w0
+          echo
+          echo 'LOCKFILE_GZIP_BASE64_END'
+          sha256sum package-lock.json
