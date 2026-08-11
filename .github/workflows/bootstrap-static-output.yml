@@ -14,7 +14,7 @@ concurrency:
 jobs:
   materialize:
     if: github.actor != 'github-actions[bot]'
-    runs-on: [linux, amd64, mobile]
+    runs-on: [linux, amd64, general]
     timeout-minutes: 35
     env:
       SOURCE_SHA: ${{ github.sha }}
