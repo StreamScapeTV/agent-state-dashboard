@@ -69,7 +69,7 @@ npm run cf:build
 
 ## CI and deployment
 
-`.github/workflows/ci.yml` runs on the organization-managed `[linux, amd64, general]` capability set and creates no routine Actions artifacts.
+`.github/workflows/ci.yml` runs on the organization-managed `[linux, amd64, mobile]` capability set. The OpenNext production bundle materially exceeded the 1 GiB general runner's practical envelope, so CI uses the documented 4 GiB exact-source Node-capable class and creates no routine Actions artifacts.
 
 `main` deploys with `.github/workflows/deploy.yml`. Configure these GitHub `production` environment secrets before deployment:
 
