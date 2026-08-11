@@ -27,12 +27,15 @@ This repository is a read-only visualization client for the separately owned `St
 
 - Next.js App Router static export + TypeScript
 - Material UI
+- Committed `package-lock.json`
 - Committed `out/` directory served by Cloudflare Pages
 - Cloudflare Pages advanced-mode `out/_worker.js` for authenticated `/api/*` reads and `env.ASSETS` fallback
 - Supabase JavaScript client bundled only into the server-side Worker
 
-## CI and deployment
+## Validation and deployment
 
-Follow `StreamScapeTV/ci-workflows@main/RUNNERS.md` for runner selection. CI must prove that the complete `out/` artifact is reproducible from the reviewed source before merge and must never use bare `self-hosted`.
+Before merging any source change, use the committed Node version and lockfile, run `npm ci`, `npm test`, `npm run typecheck`, and `npm run pages:build`, then verify the intended `package-lock.json` and `out/` bytes are committed and stable. Never regenerate `out/` with unreviewed dependencies or credentials present in the build environment.
+
+Do not add a product-local GitHub Actions job with concrete runner labels as a CI workaround. Follow `StreamScapeTV/ci-workflows@main/RUNNERS.md`; when the central contracts support this prebuilt Pages advanced-mode artifact, use a thin semantic caller rather than local runner selection.
 
 Cloudflare Pages is connected directly to GitHub `main`. Configure the Pages project with no application build step and build output directory `out`. Cloudflare must deploy the already-committed advanced-mode output rather than build application source. Store the Supabase credential and Cloudflare Access configuration only as encrypted Cloudflare Pages secrets; never in repository files.
