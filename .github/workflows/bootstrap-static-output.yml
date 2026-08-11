@@ -46,21 +46,25 @@ jobs:
           npm test
           npm run typecheck
 
-      - name: Build static export and Pages Functions
-        run: |
-          npm run build
-          npm run pages:functions
+      - name: Build complete Pages output
+        run: npm run pages:build
 
       - name: Verify generated Pages contract
         shell: bash
         run: |
           set -Eeuo pipefail
           test -f out/index.html
+          test -f out/_worker.js
           test -f out/_routes.json
           test -f out/_headers
-          grep -q '"/api/\*"' out/_routes.json
-          if grep -R -n -E 'AGENT_STATE_SUPABASE_SECRET_KEY|sb_secret_|service_role' out; then
-            echo "Static output contains a forbidden secret marker" >&2
+          grep -q 'ASSETS' out/_worker.js
+          grep -q 'get_project_state' out/_worker.js
+          if grep -R -n -E 'sb_secret_|service_role' out; then
+            echo "Prebuilt output contains a forbidden credential marker" >&2
+            exit 1
+          fi
+          if grep -R -n 'AGENT_STATE_SUPABASE_SECRET_KEY' out --exclude='_worker.js'; then
+            echo "Browser assets contain a server-only secret binding name" >&2
             exit 1
           fi
 
@@ -75,5 +79,5 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "build: materialize static Pages export"
+          git commit -m "build: materialize prebuilt Pages output"
           git push origin HEAD:issue/1-pages-static-output
