@@ -21,7 +21,7 @@ export async function onRequestGet(context) {
   if (!isConfiguredProject(project)) return json({ error: "Unknown project" }, 404);
 
   try {
-    return json(await readOverview(context.env, project));
+    return json({ ...(await readOverview(context.env, project)), viewer: access.viewer });
   } catch (error) {
     const message = error instanceof AgentStateReadError ? error.message : "Agent State read failed.";
     return json({ error: message }, 502);
