@@ -481,7 +481,7 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
   const [statusFilter, setStatusFilter] = useState<AgentStatusFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("attention");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [selectedAgent, setSelectedAgent] = useState<AgentViewRow | null>(null);
+  const [selectedAgentKey, setSelectedAgentKey] = useState<string | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
   const hasLoaded = useRef(false);
 
@@ -549,6 +549,10 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
 
   const baseRows = useMemo(() => snapshot ? buildAgentRows(snapshot, 0) : [], [snapshot]);
   const rows = useMemo(() => refreshAgentDurations(baseRows, nowMs), [baseRows, nowMs]);
+  const selectedAgent = useMemo(
+    () => selectedAgentKey ? rows.find((row) => row.key === selectedAgentKey) ?? null : null,
+    [rows, selectedAgentKey],
+  );
   const projects = useMemo(() => snapshot ? buildProjectSummaries(snapshot, baseRows) : [], [snapshot, baseRows]);
 
   const isStale = lastRefresh ? nowMs - lastRefresh.getTime() > STALE_AFTER_MS : liveState === "stale";
@@ -734,7 +738,7 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
                   <TableCell sx={{ whiteSpace: "nowrap" }}><Tooltip title={displayTime(row.promptAssignedAt)}><Typography variant="body2">{shortTime(row.promptAssignedAt)}</Typography></Tooltip></TableCell>
                   <TableCell sx={{ whiteSpace: "nowrap" }}><Tooltip title={displayTime(row.lastReturnedAt)}><Typography variant="body2">{shortTime(row.lastReturnedAt)}</Typography></Tooltip></TableCell>
                   <TableCell sx={{ whiteSpace: "nowrap" }}><Typography variant="body2" fontWeight={700}>{formatDuration(row.durationMs)}</Typography></TableCell>
-                  <TableCell align="right"><Button size="small" startIcon={<VisibilityRounded />} onClick={() => setSelectedAgent(row)}>View</Button></TableCell>
+                  <TableCell align="right"><Button size="small" startIcon={<VisibilityRounded />} onClick={() => setSelectedAgentKey(row.key)}>View</Button></TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -743,7 +747,7 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
         </TableContainer>
       </Paper>
 
-      <AgentDetailDialog row={selectedAgent} onClose={() => setSelectedAgent(null)} />
+      <AgentDetailDialog row={selectedAgent} onClose={() => setSelectedAgentKey(null)} />
       <RawTablesDialog open={rawOpen} onClose={() => setRawOpen(false)} />
     </Container>
   );
