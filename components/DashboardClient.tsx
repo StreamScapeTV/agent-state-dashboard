@@ -516,15 +516,16 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
   }, [legacyProjects, refreshToken]);
 
   useEffect(() => {
-    let staleTimer: number | null = null;
     setLiveState("connecting");
     const events = new EventSource("/events");
-    const markLive = () => {
-      if (staleTimer) window.clearTimeout(staleTimer);
-      staleTimer = null;
-      setLiveState("live");
-    };
+    const markLive = () => setLiveState("live");
     const refreshFromEvent = () => {
+      // Server refresh events are polling/initial fallback signals. They prove
+      // data can be refetched, not that Supabase Realtime is subscribed.
+      requestRefresh();
+    };
+    const invalidateFromEvent = () => {
+      // A Postgres invalidation proves Realtime traffic is flowing.
       markLive();
       requestRefresh();
     };
@@ -540,26 +541,21 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
           setLiveState(payload.status === "starting" ? "connecting" : "reconnecting");
         }
       } catch {
-        // Ignore malformed status events; connection/polling fallback still protects freshness.
+        // Ignore malformed status events; data freshness still has polling protection.
       }
     };
-    events.onopen = markLive;
+    events.onopen = () => setLiveState("connecting");
     events.addEventListener("refresh", refreshFromEvent);
-    events.addEventListener("invalidate", refreshFromEvent);
+    events.addEventListener("invalidate", invalidateFromEvent);
     events.addEventListener("status", handleStatus);
-    events.onerror = () => {
-      setLiveState("reconnecting");
-      if (staleTimer) window.clearTimeout(staleTimer);
-      staleTimer = window.setTimeout(() => setLiveState("stale"), 20_000);
-    };
+    events.onerror = () => setLiveState("reconnecting");
     const poll = window.setInterval(() => requestRefresh(), POLL_INTERVAL_MS);
     return () => {
       events.removeEventListener("refresh", refreshFromEvent);
-      events.removeEventListener("invalidate", refreshFromEvent);
+      events.removeEventListener("invalidate", invalidateFromEvent);
       events.removeEventListener("status", handleStatus);
       events.close();
       window.clearInterval(poll);
-      if (staleTimer) window.clearTimeout(staleTimer);
     };
   }, [requestRefresh]);
 
