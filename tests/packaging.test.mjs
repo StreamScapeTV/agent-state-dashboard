@@ -61,6 +61,11 @@ test("container packages static export behind NGINX and a loopback Node data pro
   assert.match(entrypoint, /SUPABASE_URL/);
   assert.match(entrypoint, /SUPABASE_SECRET_KEY/);
   assert.match(entrypoint, /SERVER_PORT:-8788/);
+  assert.match(entrypoint, /\/tmp\/nginx\/client_temp/);
+  assert.match(entrypoint, /\/tmp\/nginx\/proxy_temp/);
+  assert.match(entrypoint, /\/tmp\/nginx\/fastcgi_temp/);
+  assert.match(entrypoint, /\/tmp\/nginx\/uwsgi_temp/);
+  assert.match(entrypoint, /\/tmp\/nginx\/scgi_temp/);
   assert.doesNotMatch(`${dockerfile}\n${entrypoint}`, /AGENT_STATE_SUPABASE_SECRET_KEY|TEAM_DOMAIN|POLICY_AUD|fvbaxyklaclgdzyhybbr/);
 });
 
