@@ -62,6 +62,7 @@ import {
   formatDuration,
   liveEventDecision,
   normalizeSnapshot,
+  refreshAgentDurations,
   statusLabel,
   type DashboardLiveEvent,
   type DashboardLiveState,
@@ -546,20 +547,21 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
     };
   }, [requestRefresh]);
 
-  const rows = useMemo(() => snapshot ? buildAgentRows(snapshot, nowMs) : [], [snapshot, nowMs]);
-  const projects = useMemo(() => snapshot ? buildProjectSummaries(snapshot, rows) : [], [snapshot, rows]);
+  const baseRows = useMemo(() => snapshot ? buildAgentRows(snapshot, 0) : [], [snapshot]);
+  const rows = useMemo(() => refreshAgentDurations(baseRows, nowMs), [baseRows, nowMs]);
+  const projects = useMemo(() => snapshot ? buildProjectSummaries(snapshot, baseRows) : [], [snapshot, baseRows]);
 
   const isStale = lastRefresh ? nowMs - lastRefresh.getTime() > STALE_AFTER_MS : liveState === "stale";
   const effectiveLiveState: DashboardLiveState = isStale ? "stale" : liveState;
 
   const metrics = useMemo(() => ({
     projects: projects.length,
-    agents: rows.length,
-    working: rows.filter((row) => row.baseStatus === "working").length,
-    returned: rows.filter((row) => row.baseStatus === "returned").length,
-    blocked: rows.filter((row) => row.blocked).length,
-    idle: rows.filter((row) => row.baseStatus === "idle").length,
-  }), [projects, rows]);
+    agents: baseRows.length,
+    working: baseRows.filter((row) => row.baseStatus === "working").length,
+    returned: baseRows.filter((row) => row.baseStatus === "returned").length,
+    blocked: baseRows.filter((row) => row.blocked).length,
+    idle: baseRows.filter((row) => row.baseStatus === "idle").length,
+  }), [projects, baseRows]);
 
   const filteredRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
