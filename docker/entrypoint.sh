@@ -13,6 +13,15 @@ if [ ! -f "${SERVER_ENTRYPOINT}" ]; then
   exit 70
 fi
 
+# Kubernetes mounts an emptyDir over /tmp for the read-only root filesystem,
+# so recreate the NGINX temp hierarchy after that mount is in place.
+mkdir -p \
+  /tmp/nginx/client_temp \
+  /tmp/nginx/proxy_temp \
+  /tmp/nginx/fastcgi_temp \
+  /tmp/nginx/uwsgi_temp \
+  /tmp/nginx/scgi_temp
+
 export SERVER_HOST SERVER_PORT
 export HOST="${HOST:-${SERVER_HOST}}"
 export PORT="${PORT:-${SERVER_PORT}}"
