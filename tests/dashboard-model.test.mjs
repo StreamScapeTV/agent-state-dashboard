@@ -170,6 +170,24 @@ test("snapshot normalization preserves the full authoritative prompt and respons
   assert.equal(model.statusLabel(row), "Blocked · working");
 });
 
+test("agent next action prefers explicit current work action over a generic actor checkpoint", () => {
+  const snapshot = {
+    projects: [],
+    agents: [agent({
+      state: { checkpoint: "Source review complete" },
+      promptAssignedAt: "2026-08-12T00:00:00Z",
+    })],
+    work: work({ objective: "Ship console", next_action: "Run exact-head validation" }),
+    resources: [],
+    coordination: [],
+    refreshedAt: "2026-08-12T00:01:00Z",
+    missingTables: [],
+  };
+
+  const [row] = model.buildAgentRows(snapshot, Date.parse("2026-08-12T00:02:00Z"));
+  assert.equal(row.nextAction, "Run exact-head validation");
+});
+
 test("project summaries preserve returned attention counts and current project fields", () => {
   const snapshot = model.normalizeSnapshot({
     tables: {
