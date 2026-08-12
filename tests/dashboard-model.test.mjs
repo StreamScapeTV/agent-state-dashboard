@@ -130,6 +130,70 @@ test("duration stays live while working and freezes at return", () => {
   assert.equal(model.formatDuration(330_000), "5m 30s");
 });
 
+test("duration-only refresh does not rebuild static row semantics", () => {
+  const snapshot = {
+    projects: [],
+    agents: [
+      agent({ identity: "Agent 1", promptAssignedAt: "2026-08-12T00:00:00Z" }),
+      agent({ identity: "Agent 2", promptAssignedAt: "2026-08-12T00:00:00Z", lastReturnedAt: "2026-08-12T00:01:00Z" }),
+    ],
+    work: [],
+    resources: [],
+    coordination: [],
+    refreshedAt: "2026-08-12T00:01:00Z",
+    missingTables: [],
+  };
+  const baseRows = model.buildAgentRows(snapshot, 0);
+  const refreshed = model.refreshAgentDurations(baseRows, Date.parse("2026-08-12T00:02:00Z"));
+
+  assert.equal(refreshed[0].durationMs, 120_000);
+  assert.equal(refreshed[0].baseStatus, "working");
+  assert.equal(refreshed[1], baseRows[1], "completed rows should retain identity when duration is unchanged");
+  assert.equal(refreshed[1].durationMs, 60_000);
+});
+
+test("agent association indexes isolate project and identity ownership", () => {
+  const snapshot = {
+    projects: [],
+    agents: [
+      agent({ projectKey: "alpha", identity: "Agent 1" }),
+      agent({ projectKey: "alpha", identity: "Agent 2" }),
+      agent({ projectKey: "beta", identity: "Agent 1" }),
+    ],
+    work: [
+      { projectKey: "alpha", identity: "Agent 1", workKey: "a1", state: { objective: "Alpha one" } },
+      { projectKey: "alpha", identity: "Agent 2", workKey: "a2", state: { objective: "Alpha two" } },
+      { projectKey: "beta", identity: "Agent 1", workKey: "b1", state: { objective: "Beta one" } },
+    ],
+    resources: [
+      { projectKey: "alpha", identity: "Agent 1", resourceKey: "alpha-one" },
+      { projectKey: "alpha", identity: "Agent 2", resourceKey: "alpha-two" },
+      { projectKey: "beta", identity: "Agent 1", resourceKey: "beta-one" },
+    ],
+    coordination: [
+      { projectKey: "alpha", sender: "Agent 1", recipient: "Agent 2", state: { status: "handoff" } },
+      { projectKey: "beta", sender: "Agent 1", recipient: "Agent 1", state: { status: "self-check" } },
+    ],
+    refreshedAt: "2026-08-12T00:00:00Z",
+    missingTables: [],
+  };
+
+  const rows = model.buildAgentRows(snapshot, 0);
+  const alphaOne = rows.find((row) => row.projectKey === "alpha" && row.identity === "Agent 1");
+  const alphaTwo = rows.find((row) => row.projectKey === "alpha" && row.identity === "Agent 2");
+  const betaOne = rows.find((row) => row.projectKey === "beta" && row.identity === "Agent 1");
+
+  assert.deepEqual(alphaOne.work.map((item) => item.workKey), ["a1"]);
+  assert.deepEqual(alphaTwo.work.map((item) => item.workKey), ["a2"]);
+  assert.deepEqual(betaOne.work.map((item) => item.workKey), ["b1"]);
+  assert.deepEqual(alphaOne.resources.map((item) => item.resourceKey), ["alpha-one"]);
+  assert.deepEqual(alphaTwo.resources.map((item) => item.resourceKey), ["alpha-two"]);
+  assert.deepEqual(betaOne.resources.map((item) => item.resourceKey), ["beta-one"]);
+  assert.equal(alphaOne.coordination.length, 1);
+  assert.equal(alphaTwo.coordination.length, 1);
+  assert.equal(betaOne.coordination.length, 1, "self-coordination must not be duplicated");
+});
+
 test("snapshot normalization accepts the five authority-table contract", () => {
   const snapshot = model.normalizeSnapshot({
     current_projects: [{ project_key: "demo", state: { phase: "build", objective: "Ship console" } }],
@@ -223,7 +287,7 @@ test("project summaries preserve returned attention counts and current project f
   assert.equal(summary.nextAction, "Merge");
 });
 
-test("client source contract delegates live transitions and keeps keyboard controls wired", () => {
+test("client source contract delegates live transitions, isolates duration ticks and keeps keyboard controls wired", () => {
   const source = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
 
   assert.match(source, /liveEventDecision\(kind, payload\)/);
@@ -232,6 +296,8 @@ test("client source contract delegates live transitions and keeps keyboard contr
   assert.match(source, /applyLiveEvent\("status", event\.data\)/);
   assert.match(source, /events\.onopen = \(\) => applyLiveEvent\("open"\)/);
   assert.match(source, /events\.onerror = \(\) => applyLiveEvent\("error"\)/);
+  assert.match(source, /const baseRows = useMemo\(\(\) => snapshot \? buildAgentRows\(snapshot, 0\) : \[\], \[snapshot\]\)/);
+  assert.match(source, /refreshAgentDurations\(baseRows, nowMs\)/);
   assert.match(source, /onClick=\{\(\) => sort\("attention"\)\}/);
   assert.match(source, /<CardActionArea/);
   assert.match(source, /aria-pressed=\{selected\}/);
