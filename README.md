@@ -96,15 +96,16 @@ helm lint charts/agent-state-dashboard
 helm template agent-state-dashboard charts/agent-state-dashboard
 ```
 
-The package tests check the NGINX route contract, Secret references, Tailscale metadata, probes/resources/security posture, and the central release caller. A clean image build should be exercised against the merged server data plane before tagging a release.
+The package tests check the NGINX route contract, Secret references, Tailscale metadata, probes/resources/security posture, release-version alignment, and the central release caller. A clean image build must be exercised against the merged server data plane before tagging a release.
 
 ## Immutable release
 
 `.github/workflows/release.yml` is a thin tag-push caller of the organization release primitive. It does not choose a runner or container engine. The central workflow builds and publishes the multi-platform image and OCI chart to the existing private registry, then reads them back before success.
 
-For every release, keep these three versions identical before creating the tag:
+For every release, keep these four versions identical before creating the tag:
 
 - Git tag, for example `0.1.0`;
+- `package.json` `version`;
 - `charts/agent-state-dashboard/Chart.yaml` `version`;
 - `charts/agent-state-dashboard/Chart.yaml` `appVersion`.
 
@@ -116,6 +117,8 @@ oci://git.faruqi.dev/mimranfaruqi/helm-charts/agent-state-dashboard
 ```
 
 The workflow uses the repository secrets `FORGEJO_REGISTRY_USERNAME` and `FORGEJO_REGISTRY_TOKEN`, publishes no `latest` authority, retains no routine Actions artifact, and performs no deployment. Keep the exact source SHA plus verified remote image/chart digest evidence from the central workflow for the release handoff to Flux.
+
+The required evidence fields and Cloudflare retirement handoff are documented in [`docs/release.md`](docs/release.md). External Pages/Access removal follows successful Flux #288 activation; disabling the old service is never used as proof that the K3s release is healthy.
 
 ## Supabase boundary
 
