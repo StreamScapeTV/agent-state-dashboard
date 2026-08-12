@@ -8,9 +8,10 @@ import {
   createLiveController,
   readRuntimeConfig,
   readSnapshot,
+  readTable,
 } from "../server/index.mjs";
 
-function createFakeClient(fixtures = {}) {
+function createFakeClient(fixtures = {}, errors = {}) {
   const subscriptions = [];
   const channels = [];
   const reads = [];
@@ -21,9 +22,21 @@ function createFakeClient(fixtures = {}) {
     reads,
     from(table) {
       return {
-        async select(selection) {
-          reads.push({ table, selection });
-          return { data: fixtures[table] ?? [], error: null };
+        select(selection) {
+          const orders = [];
+          const query = {
+            order(column, options) {
+              orders.push({ column, options });
+              return query;
+            },
+            async range(from, to) {
+              reads.push({ table, selection, orders: [...orders], from, to });
+              if (errors[table]) return { data: null, error: errors[table] };
+              const rows = fixtures[table] ?? [];
+              return { data: rows.slice(from, to + 1), error: null };
+            },
+          };
+          return query;
         },
       };
     },
@@ -124,6 +137,54 @@ test("table allowlist is exactly the five current Agent State authority tables",
   assert.throws(() => assertReadableTable("current_history"), /Unknown Agent State table/);
 });
 
+test("table reads paginate deterministically so Data API row limits cannot truncate current state", async () => {
+  const resources = Array.from({ length: 5 }, (_, index) => ({
+    project_key: "dashboard",
+    resource_key: `resource-${index + 1}`,
+    agent: "Agent 1",
+  }));
+  const client = createFakeClient({ current_resources: resources });
+  const rows = await readTable(client, "current_resources", { pageSize: 2 });
+
+  assert.deepEqual(rows, resources);
+  assert.deepEqual(
+    client.reads.map(({ table, selection, orders, from, to }) => ({ table, selection, orders, from, to })),
+    [
+      {
+        table: "current_resources",
+        selection: "*",
+        orders: [
+          { column: "project_key", options: { ascending: true } },
+          { column: "resource_key", options: { ascending: true } },
+        ],
+        from: 0,
+        to: 1,
+      },
+      {
+        table: "current_resources",
+        selection: "*",
+        orders: [
+          { column: "project_key", options: { ascending: true } },
+          { column: "resource_key", options: { ascending: true } },
+        ],
+        from: 2,
+        to: 3,
+      },
+      {
+        table: "current_resources",
+        selection: "*",
+        orders: [
+          { column: "project_key", options: { ascending: true } },
+          { column: "resource_key", options: { ascending: true } },
+        ],
+        from: 4,
+        to: 5,
+      },
+    ],
+  );
+  await assert.rejects(() => readTable(client, "current_resources", { pageSize: 0 }), /pageSize/);
+});
+
 test("snapshot reads all five tables and preserves authoritative current-agent fields", async () => {
   const fixtures = {
     current_projects: [{ project_key: "dashboard", state: { phase: "build" } }],
@@ -148,7 +209,8 @@ test("snapshot reads all five tables and preserves authoritative current-agent f
   assert.equal(snapshot.current_agents[0].prompt_assigned_at, "2026-08-12T01:00:00Z");
   assert.equal(snapshot.current_agents[0].last_response, "done");
   assert.equal(snapshot.current_agents[0].last_returned_at, "2026-08-12T01:01:00Z");
-  assert.deepEqual(client.reads, READABLE_TABLES.map((table) => ({ table, selection: "*" })));
+  assert.deepEqual(client.reads.map(({ table }) => table).sort(), [...READABLE_TABLES].sort());
+  assert.ok(client.reads.every(({ from, to }) => from === 0 && to === 999));
 });
 
 test("Realtime subscribes to all five tables, removes failed channels, and ignores stale callbacks", async () => {
@@ -295,15 +357,9 @@ test("HTTP surface is GET-only, read-only, allowlisted, and does not expose conf
 });
 
 test("Supabase read failures return a generic response without leaking raw configuration or provider errors", async (t) => {
-  const client = createFakeClient();
-  client.from = () => ({
-    async select() {
-      return {
-        data: null,
-        error: {
-          message: "failed against https://sensitive.example.invalid with super-secret-value",
-        },
-      };
+  const client = createFakeClient({}, {
+    current_projects: {
+      message: "failed against https://sensitive.example.invalid with super-secret-value",
     },
   });
   const runtime = createDashboardServer({
