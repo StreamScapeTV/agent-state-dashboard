@@ -66,6 +66,13 @@ test("container packages static export behind NGINX and a loopback Node data pro
   assert.match(entrypoint, /\/tmp\/nginx\/fastcgi_temp/);
   assert.match(entrypoint, /\/tmp\/nginx\/uwsgi_temp/);
   assert.match(entrypoint, /\/tmp\/nginx\/scgi_temp/);
+
+  const nodeStart = entrypoint.indexOf('node "${SERVER_ENTRYPOINT}" &');
+  const secretUnset = entrypoint.indexOf("unset SUPABASE_URL SUPABASE_SECRET_KEY");
+  const nginxStart = entrypoint.indexOf("nginx -g 'daemon off;' &");
+  assert.ok(nodeStart >= 0 && nodeStart < secretUnset);
+  assert.ok(secretUnset < nginxStart);
+
   assert.doesNotMatch(`${dockerfile}\n${entrypoint}`, /AGENT_STATE_SUPABASE_SECRET_KEY|TEAM_DOMAIN|POLICY_AUD|fvbaxyklaclgdzyhybbr/);
 });
 
