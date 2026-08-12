@@ -16,6 +16,7 @@ const [
   releaseWorkflow,
   packageJsonSource,
   nodeVersionSource,
+  nextConfigSource,
   dockerIgnore,
   gitIgnore,
 ] = await Promise.all([
@@ -30,6 +31,7 @@ const [
   read(".github/workflows/release.yml"),
   read("package.json"),
   read(".nvmrc"),
+  read("next.config.ts"),
   read(".dockerignore"),
   read(".gitignore"),
 ]);
@@ -53,6 +55,12 @@ test("container packages static export behind NGINX and a loopback Node data pro
   assert.match(entrypoint, /SUPABASE_SECRET_KEY/);
   assert.match(entrypoint, /SERVER_PORT:-8788/);
   assert.doesNotMatch(`${dockerfile}\n${entrypoint}`, /AGENT_STATE_SUPABASE_SECRET_KEY|TEAM_DOMAIN|POLICY_AUD|fvbaxyklaclgdzyhybbr/);
+});
+
+test("static build identity rotates with the release version before immutable caching", () => {
+  assert.match(nextConfigSource, /readFileSync\("package\.json", "utf8"\)/);
+  assert.match(nextConfigSource, /generateBuildId:[^\n]*agent-state-dashboard-\$\{packageVersion\}/);
+  assert.doesNotMatch(nextConfigSource, /agent-state-dashboard-static/);
 });
 
 test("NGINX proxies only the local data routes and gives immutable static assets long caching", () => {
