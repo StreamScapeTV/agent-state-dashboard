@@ -31,6 +31,12 @@ This repository is a read-only visualization client for the separately owned `St
 
 Issue #5 owns only the server/read/Realtime implementation. Issue #6 owns the frontend operations console. Issue #7 owns Docker/NGINX/Helm/release packaging and Cloudflare deployment-artifact retirement. Flux #288 owns cluster desired state, Secret material, Tailscale exposure, reconciliation, and live rollout.
 
+## Agent N work packets
+
+When meaningful dependency-ready work exists, a normal Agent N assignment should target roughly 120 minutes of productive work. The worker owns each bounded issue end to end through implementation, tests, review feedback, exact-head validation when available, merge and integration verification, issue closure, resource release, and branch cleanup.
+
+Finishing a small issue is not by itself a reason to return. After fully cleaning it up, reread Agent State and live GitHub state and continue with the next unassigned, dependency-ready, independently mergeable dashboard issue allowed by the current assignment and resource ownership. If none exists, a worker may create one bounded follow-up only for a real concrete gap in its existing dashboard #4 ownership surface. Preserve one issue/branch/PR and resource claims per independently mergeable result; do not invent busywork, cross another actor's surface, idle to fill time, or fabricate evidence. Return early only when no productive, authorized, dependency-ready work remains.
+
 ## Validation and CI
 
 Before merging source changes, use the committed Node version and lockfile and run `npm ci`, `npm test`, `npm run typecheck`, and `npm run build` when those commands apply to the changed source. A worker must not fabricate unavailable runtime, integration, container, device, deployment, or release evidence.
