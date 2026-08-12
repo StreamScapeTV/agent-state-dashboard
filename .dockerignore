@@ -1,0 +1,16 @@
+.git
+.github
+node_modules
+.next
+out
+coverage
+charts
+tests
+functions
+pages-server
+README.md
+AGENTS.md
+*.log
+.env
+.env.*
+.DS_Store

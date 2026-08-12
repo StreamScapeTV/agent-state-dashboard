@@ -1,13 +1,10 @@
 node_modules/
 .next/
-.pages-functions-dist/
-.wrangler/
-.wrangler-dry-run/
+out/
 coverage/
+charts/**/*.tgz
 *.log
 .DS_Store
 .env
 .env.*
 !.env.example
-.dev.vars
-.dev.vars.*

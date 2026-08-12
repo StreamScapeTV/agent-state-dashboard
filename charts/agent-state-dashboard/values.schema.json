@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["image", "service", "tailscale", "supabase"],
+  "properties": {
+    "replicaCount": {"type": "integer", "minimum": 1, "maximum": 5},
+    "image": {
+      "type": "object",
+      "required": ["repository", "pullPolicy", "tag", "digest"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]},
+        "tag": {"type": "string"},
+        "digest": {"type": "string", "pattern": "^$|^sha256:[a-f0-9]{64}$"}
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {"name": {"type": "string", "minLength": 1}}
+      }
+    },
+    "service": {
+      "type": "object",
+      "required": ["port"],
+      "properties": {"port": {"type": "integer", "minimum": 1, "maximum": 65535}}
+    },
+    "tailscale": {
+      "type": "object",
+      "required": ["enabled", "hostname", "tags", "proxyGroup"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "hostname": {"type": "string", "minLength": 1},
+        "tags": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "proxyGroup": {"type": "string", "minLength": 1}
+      }
+    },
+    "supabase": {
+      "type": "object",
+      "required": ["existingSecret"],
+      "properties": {
+        "existingSecret": {
+          "type": "object",
+          "required": ["name", "urlKey", "secretKeyKey"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "urlKey": {"type": "string", "minLength": 1},
+            "secretKeyKey": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}

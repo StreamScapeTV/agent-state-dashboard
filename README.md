@@ -1,93 +1,130 @@
 # Agent State Control Room
 
-Private, read-only StreamScapeTV dashboard for the current Agent State authority. The repository commits the complete Cloudflare Pages output: static Next.js assets plus a precompiled advanced-mode Worker for authenticated API reads.
+Private, read-only StreamScapeTV dashboard for the current Agent State authority. The deployable product is an immutable OCI image plus an OCI Helm chart for K3s; Cloudflare Pages is no longer the application runtime.
 
 ## Architecture
 
 ```text
-Browser
-  -> Cloudflare Access SSO
-     -> committed out/_worker.js
-        -> /api/*: verify Cf-Access-Jwt-Assertion
-                   -> encrypted AGENT_STATE_SUPABASE_SECRET_KEY
-                      -> agent_api.get_project_state
-                      -> agent_api.get_agent_state
-                      -> agent_api.get_storage_budget
-        -> everything else: env.ASSETS.fetch(request)
-                            -> committed static files in out/
+Browser on the private tailnet
+  -> Tailscale Kubernetes LoadBalancer
+     -> NGINX :8080
+        -> /, /_next/*      static Next.js export
+        -> /healthz         Node server on 127.0.0.1:8788
+        -> /api/*           Node server on 127.0.0.1:8788
+        -> /events          Node SSE endpoint on 127.0.0.1:8788
+                              -> server-only Supabase client
+                                 -> five Agent State current tables
+                                 -> Supabase Realtime invalidation
 ```
 
-The browser never receives a Supabase credential. The repository contains no secret value, no Agent State mutation code, and no direct query of `agent_private` tables. Prompt bodies are deliberately not returned to the dashboard client.
+The browser never receives a Supabase credential. The server is observation-only: no mutation RPC, SQL editor, generic RPC proxy, or write endpoint belongs in this application.
 
-`out/_worker.js` is generated before merge from the reviewed `/functions/api/*` entrypoints and `/pages-server` helpers. Because `_worker.js` is already in the Pages output directory, Cloudflare Pages uses advanced mode and does not need to compile the application or the Function sources during deployment.
+## Runtime secret contract
 
-## Agent discovery
+Kubernetes must already contain a Secret named `agent-state-dashboard-supabase` with these keys:
 
-The current Agent State API intentionally has no list-all-agents RPC. The supported identity space is bounded to `Orchestrator`, `Dependabot`, `Agent 1..100`, and `Codex 1..100`. The API scans those exact identities through `get_agent_state` in batches of 28 and discards empty actors. It never circumvents the RPC boundary with a table query.
+```text
+SUPABASE_URL
+SUPABASE_SECRET_KEY
+```
 
-## Cloudflare Pages setup
+The chart references those keys with `secretKeyRef`; it never contains credential values. The same names are the only Supabase configuration accepted by the container entrypoint. Do not use `NEXT_PUBLIC_*` for either value.
 
-Connect `StreamScapeTV/agent-state-dashboard` to Cloudflare Pages using Git integration and use:
+## Container contract
 
-- Production branch: `main`
-- Root directory: repository root
-- Framework preset: None
-- Build command: leave blank (or `exit 0` if the UI requires a command)
-- Build output directory: `out`
+The image build:
 
-The repository already contains the complete deployable output in `out/`, including `out/_worker.js`. Source changes must regenerate and commit `out/` before merge so a `main` deployment never depends on Cloudflare running `next build` or bundling the API Worker.
+1. installs the committed npm lockfile;
+2. creates the deterministic Next.js static export;
+3. stages the `server/` data process from the same exact source revision;
+4. serves static assets with NGINX on port `8080`;
+5. starts the Node data process on loopback port `8788`;
+6. proxies `/healthz`, `/api/*`, and `/events` to that process.
 
-Configure these **encrypted Pages secrets** under the production project:
+`/_next/static/*` receives immutable long-lived caching. Other frontend routes fall back to `index.html` so the single-screen client remains navigable. NGINX and the Node process run as a non-root user, and the Helm workload uses a read-only root filesystem with a bounded `/tmp` volume.
 
-- `AGENT_STATE_SUPABASE_SECRET_KEY`
-- `TEAM_DOMAIN` — Cloudflare Access team domain, including `https://`
-- `POLICY_AUD` — Access application audience tag
+`out/` is generated during builds and is intentionally ignored. Never commit a prebuilt browser/runtime deployment artifact.
 
-The Agent State Supabase URL is public routing metadata and is fixed in the server source as `https://fvbaxyklaclgdzyhybbr.supabase.co`.
+## Helm chart
 
-Protect the Pages hostname with a Cloudflare Access self-hosted application and the desired SSO identity provider/policy. The advanced-mode Worker independently verifies the signed Access JWT before returning `/api/*` data. Static assets are served through the Pages `ASSETS` binding.
+The chart lives at `charts/agent-state-dashboard`. Its default Tailscale contract is intentionally exact:
 
-## Supabase boundary
+```yaml
+supabase:
+  existingSecret:
+    name: agent-state-dashboard-supabase
+    urlKey: SUPABASE_URL
+    secretKeyKey: SUPABASE_SECRET_KEY
 
-The existing Supabase project must already expose `agent_api` through the Data API and allow the configured server credential to execute these existing read RPCs:
+tailscale:
+  enabled: true
+  hostname: agent-state-dashboard
+  tags:
+    - tag:agent-state-dashboard
+  proxyGroup: tailscale-proxy-group
+```
 
-- `agent_api.get_project_state(text)`
-- `agent_api.get_agent_state(text,text)`
-- `agent_api.get_storage_budget()`
+The resulting Service is a Tailscale `LoadBalancer` with `allocateLoadBalancerNodePorts: false` and annotations for hostname `agent-state-dashboard`, tag `tag:agent-state-dashboard`, and proxy group `tailscale-proxy-group`. No public Ingress or Cloudflare Tunnel is part of the initial chart.
 
-Do not modify the Supabase project from this repository. If the existing API/grants are insufficient, the dashboard fails closed and reports the configuration problem.
+For private registry authentication, provide ordinary Kubernetes `imagePullSecrets`. Do not place registry credentials in `values.yaml`.
 
-## Development and artifact refresh
+The image may be pinned by digest:
 
-Use Node `22.18.0` or newer and the committed npm lockfile.
+```yaml
+image:
+  repository: git.faruqi.dev/mimranfaruqi/agent-state-dashboard
+  digest: sha256:<verified-image-index-digest>
+```
+
+Flux owns the actual cluster values and rollout; this repository owns only the producer chart and release.
+
+## Development and validation
+
+Use Node `22.18.0` or newer with the committed npm lockfile.
 
 ```bash
 npm ci
-npm run dev
-```
-
-Generate and validate the complete Pages output before merging source changes:
-
-```bash
 npm test
 npm run typecheck
-npm run pages:build
-git diff --exit-code -- package-lock.json out
+npm run build
 ```
 
-`npm run pages:build` regenerates the static Next.js export and then precompiles the Pages API boundary into `out/_worker.js`. If source changes intentionally alter the artifact, commit the resulting `out/` changes together with the source changes, then rerun the commands above until the tree is stable.
-
-For local full Pages testing, put the three runtime secrets in ignored `.dev.vars`, generate the output, then run:
+Packaging validation additionally requires Helm:
 
 ```bash
-npm run pages:build
-npm run pages:dev
+helm lint charts/agent-state-dashboard
+helm template agent-state-dashboard charts/agent-state-dashboard
 ```
 
-Never commit `.dev.vars` or any Supabase credential.
+The package tests check the NGINX route contract, Secret references, Tailscale metadata, probes/resources/security posture, and the central release caller. A clean image build should be exercised against the merged server data plane before tagging a release.
 
-## GitHub and deployment automation
+## Immutable release
 
-This repository intentionally contains **no GitHub Actions build or Cloudflare deployment workflow**. Cloudflare Pages Git integration owns deployment from `main` and consumes the already-committed `out/` directory directly.
+`.github/workflows/release.yml` is a thin tag-push caller of the organization release primitive. It does not choose a runner or container engine. The central workflow builds and publishes the multi-platform image and OCI chart to the existing private registry, then reads them back before success.
 
-The organization-wide `ci-workflows` repository currently has active shared-registration work and its browser-only static-export contract intentionally rejects `_worker.js`. Do not add a product-local workflow with concrete runner labels as a workaround. When central CI gains a reviewed profile for a prebuilt Pages advanced-mode artifact, adopt it through a thin semantic caller.
+For every release, keep these three versions identical before creating the tag:
+
+- Git tag, for example `0.1.0`;
+- `charts/agent-state-dashboard/Chart.yaml` `version`;
+- `charts/agent-state-dashboard/Chart.yaml` `appVersion`.
+
+The current registry layout is:
+
+```text
+git.faruqi.dev/mimranfaruqi/agent-state-dashboard:<version>
+oci://git.faruqi.dev/mimranfaruqi/helm-charts/agent-state-dashboard
+```
+
+The workflow uses the repository secrets `FORGEJO_REGISTRY_USERNAME` and `FORGEJO_REGISTRY_TOKEN`, publishes no `latest` authority, retains no routine Actions artifact, and performs no deployment. Keep the exact source SHA plus verified remote image/chart digest evidence from the central workflow for the release handoff to Flux.
+
+## Supabase boundary
+
+The server reads only the five current Agent State tables required by the dashboard and subscribes to their Realtime changes:
+
+- `current_projects`
+- `current_agents`
+- `current_work`
+- `current_resources`
+- `current_coordination`
+
+The dashboard must never mutate the Agent State project. Any schema, grant, publication, or service change belongs in `StreamScapeTV/agent-state-supabase`, not here.

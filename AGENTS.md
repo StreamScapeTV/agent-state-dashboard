@@ -5,7 +5,7 @@
 - Repository: `StreamScapeTV/agent-state-dashboard`
 - Agent State project key: `agent-state-dashboard`
 - Integration branch: `main`
-- Deployment target: Cloudflare Pages Git integration
+- Deployment target: private K3s through the repository OCI Helm chart
 - Application: private read-only Agent State dashboard
 
 The sole shared organization-policy entry point is `StreamScapeTV/organization-rules@main/AGENTS.md`.
@@ -15,27 +15,49 @@ The sole shared organization-policy entry point is `StreamScapeTV/organization-r
 This repository is a read-only visualization client for the separately owned `StreamScapeTV/agent-state-supabase` service.
 
 - Never add, alter, migrate, seed, repair, reset, deploy, or otherwise mutate the Agent State Supabase project from this repository.
-- Never call Agent State mutation RPCs from application code. Dashboard data access is limited to reviewed read RPCs such as `agent_api.get_project_state`, `agent_api.get_agent_state`, and `agent_api.get_storage_budget`.
-- Never query the private Agent State tables directly.
-- Supabase secret/service-role credentials are server-only Cloudflare Pages secrets. They must never use `NEXT_PUBLIC_*`, be committed, be rendered into static HTML, or be returned by an API route.
-- Browser access is authenticated by Cloudflare Access SSO. The prebuilt API Worker must independently verify the signed Access assertion before returning Agent State data.
-- The committed `out/` directory is the complete deployment artifact: static frontend assets plus precompiled `out/_worker.js`. `/functions/api/*` and `/pages-server` are source-only inputs used to regenerate that Worker before merge.
-- `out/_worker.js` may contain secret binding names but never secret values. Browser-visible assets other than `_worker.js` must contain neither secret names nor credential material.
-- Application logging must not include credentials, prompts, unrestricted state payloads, authorization headers, or raw Supabase responses.
+- Application code must not call Agent State mutation RPCs, execute arbitrary SQL, or expose a generic Supabase proxy.
+- The local server data plane may read and subscribe to exactly the five current authority tables required by the dashboard: `current_projects`, `current_agents`, `current_work`, `current_resources`, and `current_coordination`. Do not broaden that allowlist without a reviewed product change.
+- `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are server-only runtime environment variables supplied from the existing Kubernetes Secret. They must never use `NEXT_PUBLIC_*`, be committed, appear in generated static assets, or be returned/logged by an API route.
+- The browser talks only to same-origin dashboard routes. NGINX serves the static frontend and proxies `/healthz`, `/api/*`, and `/events` to the loopback Node data process.
+- Application logging must not include credentials, authorization headers, prompts beyond the intended dashboard response contract, or unrestricted/raw Supabase responses.
+- Cloudflare Pages, Pages Functions, advanced-mode Workers, Cloudflare Access, and Cloudflare Tunnel are not part of the deployment path.
 
 ## Stack
 
 - Next.js App Router static export + TypeScript
 - Material UI
-- Committed `package-lock.json`
-- Committed `out/` directory served by Cloudflare Pages
-- Cloudflare Pages advanced-mode `out/_worker.js` for authenticated `/api/*` reads and `env.ASSETS` fallback
-- Supabase JavaScript client bundled only into the server-side Worker
+- dependency-light Node server data plane
+- NGINX static serving and local reverse proxy
+- multi-platform Docker/OCI image
+- versioned OCI Helm chart under `charts/agent-state-dashboard`
+- private K3s exposure through the Tailscale Kubernetes operator
+- committed `package-lock.json`; generated `out/` is ignored and produced during image builds
 
-## Validation and deployment
+## Runtime and Helm contract
 
-Before merging any source change, use the committed Node version and lockfile, run `npm ci`, `npm test`, `npm run typecheck`, and `npm run pages:build`, then verify the intended `package-lock.json` and `out/` bytes are committed and stable. Never regenerate `out/` with unreviewed dependencies or credentials present in the build environment.
+The container listens on port `8080`; the local server listens only on `127.0.0.1:8788`. Kubernetes probes use `GET /healthz` through NGINX.
 
-Do not add a product-local GitHub Actions job with concrete runner labels as a CI workaround. Follow `StreamScapeTV/ci-workflows@main/RUNNERS.md`; when the central contracts support this prebuilt Pages advanced-mode artifact, use a thin semantic caller rather than local runner selection.
+The chart consumes the existing Secret contract only:
 
-Cloudflare Pages is connected directly to GitHub `main`. Configure the Pages project with no application build step and build output directory `out`. Cloudflare must deploy the already-committed advanced-mode output rather than build application source. Store the Supabase credential and Cloudflare Access configuration only as encrypted Cloudflare Pages secrets; never in repository files.
+- Secret name: `agent-state-dashboard-supabase`
+- URL key: `SUPABASE_URL`
+- secret-key key: `SUPABASE_SECRET_KEY`
+
+The default private Service contract is:
+
+- `type: LoadBalancer`
+- `loadBalancerClass: tailscale`
+- `allocateLoadBalancerNodePorts: false`
+- `tailscale.com/hostname: agent-state-dashboard`
+- `tailscale.com/tags: tag:agent-state-dashboard`
+- `tailscale.com/proxy-group: tailscale-proxy-group`
+
+Do not add a public Ingress, public LoadBalancer, Cloudflare Tunnel, or credential-bearing chart value for the initial deployment.
+
+## Validation and release
+
+Before merging a source change, use the committed Node version and lockfile and run `npm ci`, `npm test`, `npm run typecheck`, and `npm run build`. For packaging changes, also run `helm lint charts/agent-state-dashboard` and render the chart with `helm template` to verify the exact Secret/Tailscale contract, probes, resources, and security context.
+
+Do not add a product-local GitHub Actions job with concrete runner labels. Follow `StreamScapeTV/ci-workflows@main/RUNNERS.md`; adopt central semantic validation APIs only when this repository is a reviewed consumer.
+
+Tagged releases use the thin caller in `.github/workflows/release.yml` and `StreamScapeTV/ci-workflows@main/.github/workflows/reusable-tag-image-chart.yml`. The Git tag, `Chart.yaml` `version`, and `appVersion` must be the same canonical SemVer. Publication is immutable: no `latest` authority. Record the exact source SHA and central workflow read-back evidence for the image and chart. The Flux repository owns cluster desired state and live rollout; this repository must not activate its own release in Kubernetes.
