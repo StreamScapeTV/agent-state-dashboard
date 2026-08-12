@@ -20,6 +20,7 @@ import {
   Box,
   Button,
   Card,
+  CardActionArea,
   CardContent,
   Chip,
   CircularProgress,
@@ -74,7 +75,6 @@ import type {
   JsonValue,
   LegacyActorsBatchPayload,
   LegacyOverviewPayload,
-  ProjectSummary,
   RawTableName,
 } from "@/types/dashboard";
 import { RAW_TABLE_NAMES } from "@/types/dashboard";
@@ -85,7 +85,7 @@ interface DashboardClientProps {
 
 type LiveState = "connecting" | "live" | "reconnecting" | "stale";
 type DataSource = "snapshot" | "legacy";
-type SortKey = "attention" | "project" | "identity" | "status" | "duration" | "assigned" | "returned";
+type SortKey = "attention" | "project" | "identity" | "duration" | "assigned" | "returned";
 type SortDirection = "asc" | "desc";
 
 const POLL_INTERVAL_MS = 30_000;
@@ -235,10 +235,6 @@ function kpiCard(label: string, value: number, helper: string, icon: React.React
       </CardContent>
     </Card>
   );
-}
-
-function projectDescription(summary: ProjectSummary): string {
-  return summary.objective ?? summary.nextAction ?? summary.phase ?? "Current Agent State project";
 }
 
 function parseLegacyWork(projectKey: string, identity: string, values: JsonValue[]): CurrentWorkRecord[] {
@@ -427,7 +423,21 @@ function RawTablesDialog({ open, onClose }: { open: boolean; onClose: () => void
                 <TableHead><TableRow>{columns.map((column) => <TableCell key={column}>{column}</TableCell>)}</TableRow></TableHead>
                 <TableBody>
                   {rows.map((row, index) => (
-                    <TableRow key={index} hover selected={selectedIndex === index} onClick={() => setSelectedIndex(index)} sx={{ cursor: "pointer" }}>
+                    <TableRow
+                      key={index}
+                      hover
+                      selected={selectedIndex === index}
+                      tabIndex={0}
+                      aria-selected={selectedIndex === index}
+                      onClick={() => setSelectedIndex(index)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedIndex(index);
+                        }
+                      }}
+                      sx={{ cursor: "pointer" }}
+                    >
                       {columns.map((column) => {
                         const value = isRecord(row) ? row[column] : row;
                         const text = cellText(value);
@@ -588,7 +598,6 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
       if (sortKey === "attention") comparison = attentionRank(left) - attentionRank(right);
       if (sortKey === "project") comparison = left.projectKey.localeCompare(right.projectKey);
       if (sortKey === "identity") comparison = left.identity.localeCompare(right.identity, undefined, { numeric: true });
-      if (sortKey === "status") comparison = statusLabel(left).localeCompare(statusLabel(right));
       if (sortKey === "duration") comparison = (left.durationMs ?? -1) - (right.durationMs ?? -1);
       if (sortKey === "assigned") comparison = (Date.parse(left.promptAssignedAt ?? "") || 0) - (Date.parse(right.promptAssignedAt ?? "") || 0);
       if (sortKey === "returned") comparison = (Date.parse(left.lastReturnedAt ?? "") || 0) - (Date.parse(right.lastReturnedAt ?? "") || 0);
@@ -656,28 +665,45 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
 
       <Paper variant="outlined" sx={{ mb: 2, p: 1.25 }}>
         <Stack direction="row" sx={{ gap: 1, overflowX: "auto", pb: .25 }}>
-          {projects.map((summary) => (
-            <Card
-              key={summary.projectKey}
-              variant="outlined"
-              onClick={() => setProjectFilter(projectFilter === summary.projectKey ? "all" : summary.projectKey)}
-              sx={{ minWidth: 250, maxWidth: 320, cursor: "pointer", borderColor: projectFilter === summary.projectKey ? "primary.main" : "divider", bgcolor: projectFilter === summary.projectKey ? (theme) => alpha(theme.palette.primary.main, .07) : undefined }}
-            >
-              <CardContent sx={{ p: "12px !important" }}>
-                <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1 }}>
-                  <Typography variant="subtitle2" noWrap>{summary.projectKey}</Typography>
-                  {summary.phase && <Chip label={summary.phase} size="small" variant="outlined" />}
-                </Stack>
-                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: .5, minHeight: 36 }} noWrap>{projectDescription(summary)}</Typography>
-                <Stack direction="row" sx={{ gap: .5, mt: 1, flexWrap: "wrap" }}>
-                  <Chip size="small" label={`${summary.working} working`} />
-                  <Chip size="small" color="success" variant="outlined" label={`${summary.returned} returned`} />
-                  {summary.blocked > 0 && <Chip size="small" color="warning" variant="outlined" label={`${summary.blocked} blocked`} />}
-                  <Chip size="small" variant="outlined" label={`${summary.idle} idle`} />
-                </Stack>
-              </CardContent>
-            </Card>
-          ))}
+          {projects.map((summary) => {
+            const selected = projectFilter === summary.projectKey;
+            return (
+              <Card
+                key={summary.projectKey}
+                variant="outlined"
+                sx={{ minWidth: 270, maxWidth: 340, borderColor: selected ? "primary.main" : "divider", bgcolor: selected ? (theme) => alpha(theme.palette.primary.main, .07) : undefined }}
+              >
+                <CardActionArea
+                  onClick={() => setProjectFilter(selected ? "all" : summary.projectKey)}
+                  aria-pressed={selected}
+                  aria-label={`${selected ? "Clear" : "Filter to"} project ${summary.projectKey}`}
+                  sx={{ height: "100%", textAlign: "left" }}
+                >
+                  <CardContent sx={{ p: "12px !important" }}>
+                    <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1 }}>
+                      <Typography variant="subtitle2" noWrap>{summary.projectKey}</Typography>
+                      {summary.phase && <Chip label={summary.phase} size="small" variant="outlined" />}
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: .5 }} noWrap>
+                      {summary.objective ?? "No current objective"}
+                    </Typography>
+                    {summary.nextAction && (
+                      <Tooltip title={summary.nextAction}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }} noWrap>Next: {summary.nextAction}</Typography>
+                      </Tooltip>
+                    )}
+                    <Stack direction="row" sx={{ gap: .5, mt: 1, flexWrap: "wrap" }}>
+                      <Chip size="small" variant="outlined" label={`${summary.total} agents`} />
+                      <Chip size="small" label={`${summary.working} working`} />
+                      <Chip size="small" color="success" variant="outlined" label={`${summary.returned} returned`} />
+                      {summary.blocked > 0 && <Chip size="small" color="warning" variant="outlined" label={`${summary.blocked} blocked`} />}
+                      <Chip size="small" variant="outlined" label={`${summary.idle} idle`} />
+                    </Stack>
+                  </CardContent>
+                </CardActionArea>
+              </Card>
+            );
+          })}
           {!loading && projects.length === 0 && <Typography color="text.secondary" sx={{ p: 2 }}>No current projects were returned.</Typography>}
         </Stack>
       </Paper>
@@ -696,7 +722,7 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
             <FormControl size="small" sx={{ minWidth: 180 }}><InputLabel>Project</InputLabel><Select value={projectFilter} label="Project" onChange={(event) => setProjectFilter(String(event.target.value))}><MenuItem value="all">All projects</MenuItem>{projects.map((item) => <MenuItem key={item.projectKey} value={item.projectKey}>{item.projectKey}</MenuItem>)}</Select></FormControl>
             <FormControl size="small" sx={{ minWidth: 150 }}><InputLabel>Identity</InputLabel><Select value={identityFilter} label="Identity" onChange={(event) => setIdentityFilter(event.target.value as IdentityKind | "all")}><MenuItem value="all">All identities</MenuItem><MenuItem value="orchestrator">Orchestrator</MenuItem><MenuItem value="agent">Agent N</MenuItem><MenuItem value="codex">Codex N</MenuItem><MenuItem value="dependabot">Dependabot</MenuItem><MenuItem value="other">Other</MenuItem></Select></FormControl>
             <FormControl size="small" sx={{ minWidth: 150 }}><InputLabel>Status</InputLabel><Select value={statusFilter} label="Status" onChange={(event) => setStatusFilter(event.target.value as AgentStatusFilter)}><MenuItem value="all">All statuses</MenuItem><MenuItem value="returned">Returned / ready</MenuItem><MenuItem value="working">Working</MenuItem><MenuItem value="blocked">Blocked</MenuItem><MenuItem value="idle">Idle</MenuItem></Select></FormControl>
-            <Tooltip title="Clear filters"><IconButton onClick={clearFilters}><FilterAltRounded /></IconButton></Tooltip>
+            <Tooltip title="Clear filters"><IconButton aria-label="Clear filters" onClick={clearFilters}><FilterAltRounded /></IconButton></Tooltip>
           </Stack>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: .75 }}>{filteredRows.length} of {rows.length} agents shown · returned/ready is the default attention-first order</Typography>
         </Box>
@@ -706,7 +732,7 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
             <TableHead><TableRow>
               <TableCell sortDirection={sortKey === "project" ? sortDirection : false}><TableSortLabel active={sortKey === "project"} direction={sortKey === "project" ? sortDirection : "asc"} onClick={() => sort("project")}>Project</TableSortLabel></TableCell>
               <TableCell sortDirection={sortKey === "identity" ? sortDirection : false}><TableSortLabel active={sortKey === "identity"} direction={sortKey === "identity" ? sortDirection : "asc"} onClick={() => sort("identity")}>Identity</TableSortLabel></TableCell>
-              <TableCell sortDirection={sortKey === "status" || sortKey === "attention" ? sortDirection : false}><TableSortLabel active={sortKey === "status" || sortKey === "attention"} direction={sortDirection} onClick={() => sort(sortKey === "attention" ? "status" : "attention")}>Status</TableSortLabel></TableCell>
+              <TableCell sortDirection={sortKey === "attention" ? sortDirection : false}><TableSortLabel active={sortKey === "attention"} direction={sortKey === "attention" ? sortDirection : "asc"} onClick={() => sort("attention")}>Status</TableSortLabel></TableCell>
               <TableCell>Current work / next action</TableCell>
               <TableCell sortDirection={sortKey === "assigned" ? sortDirection : false}><TableSortLabel active={sortKey === "assigned"} direction={sortKey === "assigned" ? sortDirection : "asc"} onClick={() => sort("assigned")}>Assigned</TableSortLabel></TableCell>
               <TableCell sortDirection={sortKey === "returned" ? sortDirection : false}><TableSortLabel active={sortKey === "returned"} direction={sortKey === "returned" ? sortDirection : "asc"} onClick={() => sort("returned")}>Returned</TableSortLabel></TableCell>
