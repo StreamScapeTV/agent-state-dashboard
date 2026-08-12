@@ -1,6 +1,6 @@
 ARG NODE_VERSION=22.18.0
 
-FROM node:${NODE_VERSION}-alpine AS build
+FROM node:${NODE_VERSION}-alpine@sha256:1b2479dd35a99687d6638f5976fd235e26c5b37e8122f786fcd5fe231d63de5b AS build
 WORKDIR /workspace
 ENV NEXT_TELEMETRY_DISABLED=1
 
@@ -15,7 +15,7 @@ RUN set -eux; \
     cp -R out/. /opt/dashboard/static/; \
     cp -R server/. /opt/dashboard/server/
 
-FROM node:${NODE_VERSION}-alpine AS runtime
+FROM node:${NODE_VERSION}-alpine@sha256:1b2479dd35a99687d6638f5976fd235e26c5b37e8122f786fcd5fe231d63de5b AS runtime
 RUN apk add --no-cache nginx tini
 
 WORKDIR /app
