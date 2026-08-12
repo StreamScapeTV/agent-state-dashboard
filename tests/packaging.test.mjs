@@ -44,6 +44,10 @@ const chartAppVersion = chart.match(/^appVersion:\s*["']?([^"'\s]+)["']?$/m)?.[1
 
 test("container packages static export behind NGINX and a loopback Node data process", () => {
   assert.match(dockerfile, new RegExp(`ARG NODE_VERSION=${nodeVersion.replaceAll(".", "\\.")}`));
+  const pinnedNodeBases = dockerfile.match(
+    /FROM node:\$\{NODE_VERSION\}-alpine@sha256:1b2479dd35a99687d6638f5976fd235e26c5b37e8122f786fcd5fe231d63de5b/g,
+  );
+  assert.equal(pinnedNodeBases?.length, 2);
   assert.match(dockerfile, /npm ci/);
   assert.match(dockerfile, /npm run build/);
   assert.match(dockerfile, /test -f server\/index\.mjs/);
