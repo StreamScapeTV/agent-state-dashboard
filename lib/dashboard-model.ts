@@ -30,8 +30,39 @@ const BLOCKER_KEYS = new Set([
   "waiting_for",
 ]);
 
+export type DashboardLiveState = "connecting" | "live" | "reconnecting" | "stale";
+export type DashboardLiveEvent = "open" | "error" | "refresh" | "invalidate" | "status";
+
+export interface DashboardLiveDecision {
+  state: DashboardLiveState | null;
+  refresh: boolean;
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function liveEventDecision(event: DashboardLiveEvent, payload?: unknown): DashboardLiveDecision {
+  if (event === "open") return { state: "connecting", refresh: false };
+  if (event === "error") return { state: "reconnecting", refresh: false };
+  if (event === "refresh") return { state: null, refresh: true };
+  if (event === "invalidate") return { state: "live", refresh: true };
+
+  let parsed = payload;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed) as unknown;
+    } catch {
+      return { state: null, refresh: false };
+    }
+  }
+  if (!isObject(parsed) || typeof parsed.status !== "string") {
+    return { state: null, refresh: false };
+  }
+  if (parsed.status === "live") return { state: "live", refresh: false };
+  if (parsed.status === "starting") return { state: "connecting", refresh: false };
+  if (parsed.status === "reconnecting") return { state: "reconnecting", refresh: false };
+  return { state: null, refresh: false };
 }
 
 function asJson(value: unknown): JsonValue {
