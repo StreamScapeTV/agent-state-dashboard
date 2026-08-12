@@ -39,6 +39,8 @@ Do not record a success value that has not been produced for the exact source SH
 
 `.github/workflows/release.yml` delegates publication to the organization exact-tag image/chart workflow. The producer caller supplies only the image/chart names, chart path, Dockerfile/build context, and explicitly named registry credentials.
 
+Before creating the release tag, the reusable workflow reference in `.github/workflows/release.yml` must be a reviewed full 40-character `StreamScapeTV/ci-workflows` commit SHA. Do not tag a release while that caller still references mutable `@main`. The first dashboard release must pin the integrated central revision that contains the verified Helm OCI manifest-digest output from `ci-workflows#111`.
+
 Expected immutable registry identities are:
 
 ```text
@@ -50,18 +52,19 @@ After the central workflow succeeds, record the read-back evidence from that exa
 
 ```text
 release_workflow_run: <GitHub Actions run URL or ID>
+publisher_workflow_sha: <40-character reviewed ci-workflows commit SHA>
 source_sha: <verified tagged commit>
 version: <canonical SemVer>
 image_reference: <immutable versioned image reference>
 image_digest: sha256:<verified multi-platform image index digest>
 chart_reference: <OCI chart repository>
 chart_version: <canonical SemVer>
-chart_oci_digest: sha256:<verified OCI chart manifest digest>
+chart_digest: sha256:<verified remote OCI chart manifest digest>
 chart_package_sha256: <verified packaged chart SHA-256 when provided>
 read_back: success
 ```
 
-If the central workflow exposes only a package checksum for the chart, retain the workflow read-back evidence that identifies the remote OCI manifest digest as well; the Flux handoff requires an immutable remote chart identity, not only a local package checksum.
+A chart package checksum is not a substitute for the remote OCI manifest digest. Do not publish the Flux handoff until the central workflow exposes and verifies `chart_digest` for the exact chart reference/version.
 
 Never put registry credentials, Supabase values, auth files, environment dumps, or cluster credentials into release evidence.
 
