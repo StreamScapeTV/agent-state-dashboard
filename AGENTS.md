@@ -15,12 +15,13 @@ The sole shared organization-policy entry point is `StreamScapeTV/organization-r
 This repository is a read-only visualization client for the separately owned `StreamScapeTV/agent-state-supabase` service.
 
 - Never add, alter, migrate, seed, repair, reset, deploy, or otherwise mutate the Agent State Supabase project from this repository.
-- Application code must not call Agent State mutation RPCs, execute arbitrary SQL, or expose a generic Supabase proxy.
-- The local server data plane may read and subscribe to exactly the five current authority tables required by the dashboard: `current_projects`, `current_agents`, `current_work`, `current_resources`, and `current_coordination`. Do not broaden that allowlist without a reviewed product change.
-- `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are server-only runtime environment variables supplied from the existing Kubernetes Secret. They must never use `NEXT_PUBLIC_*`, be committed, appear in generated static assets, or be returned/logged by an API route.
+- Application code must not call Agent State mutation RPCs, execute arbitrary SQL, expose a generic Supabase proxy, or provide browser-side Supabase access.
+- The server-side dashboard data plane may read and subscribe to exactly these five current Agent State authority tables required by dashboard #4: `current_projects`, `current_agents`, `current_work`, `current_resources`, and `current_coordination`. Do not broaden that allowlist without a separately reviewed product change.
+- `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are server-only runtime environment variables supplied from the existing Kubernetes Secret. They must never use `NEXT_PUBLIC_*`, be committed, appear in generated static assets, be returned by an API route, or be logged.
+- Browser-facing routes remain observation-only. No SQL editor, arbitrary RPC endpoint, Agent State mutation API, or mutation UI belongs in this product.
 - The browser talks only to same-origin dashboard routes. NGINX serves the static frontend and proxies `/healthz`, `/api/*`, and `/events` to the loopback Node data process.
 - Application logging must not include credentials, authorization headers, prompts beyond the intended dashboard response contract, or unrestricted/raw Supabase responses.
-- Cloudflare Pages, Pages Functions, advanced-mode Workers, Cloudflare Access, and Cloudflare Tunnel are not part of the deployment path.
+- Cloudflare Pages, Pages Functions, advanced-mode Workers, Cloudflare Access, and Cloudflare Tunnel are not part of the target deployment path. Issue #7 owns retirement of the obsolete deployment/package artifacts; Flux #288 owns actual cluster activation.
 
 ## Stack
 
@@ -32,6 +33,8 @@ This repository is a read-only visualization client for the separately owned `St
 - versioned OCI Helm chart under `charts/agent-state-dashboard`
 - private K3s exposure through the Tailscale Kubernetes operator
 - committed `package-lock.json`; generated `out/` is ignored and produced during image builds
+
+Issue #5 owns only the server/read/Realtime implementation. Issue #6 owns the frontend operations console. Issue #7 owns Docker/NGINX/Helm/release packaging and Cloudflare deployment-artifact retirement. Flux #288 owns cluster desired state, Secret material, Tailscale exposure, reconciliation, and live rollout.
 
 ## Runtime and Helm contract
 
@@ -56,8 +59,8 @@ Do not add a public Ingress, public LoadBalancer, Cloudflare Tunnel, or credenti
 
 ## Validation and release
 
-Before merging a source change, use the committed Node version and lockfile and run `npm ci`, `npm test`, `npm run typecheck`, and `npm run build`. For packaging changes, also run `helm lint charts/agent-state-dashboard` and render the chart with `helm template` to verify the exact Secret/Tailscale contract, probes, resources, and security context.
+Before merging source changes, use the committed Node version and lockfile and run `npm ci`, `npm test`, `npm run typecheck`, and `npm run build` when those commands apply to the changed source. For packaging changes, also run `helm lint charts/agent-state-dashboard` and render the chart with `helm template` to verify the exact Secret/Tailscale contract, probes, resources, and security context. A worker must not fabricate unavailable runtime, integration, container, deployment, or release evidence.
 
-Do not add a product-local GitHub Actions job with concrete runner labels. Follow `StreamScapeTV/ci-workflows@main/RUNNERS.md`; adopt central semantic validation APIs only when this repository is a reviewed consumer.
+Do not add a product-local GitHub Actions job with concrete runner labels. Follow `StreamScapeTV/ci-workflows@main/RUNNERS.md`; use a thin central semantic caller only after this repository is admitted to the corresponding reviewed central contract.
 
-Tagged releases use the thin caller in `.github/workflows/release.yml` and `StreamScapeTV/ci-workflows@main/.github/workflows/reusable-tag-image-chart.yml`. The Git tag, `Chart.yaml` `version`, and `appVersion` must be the same canonical SemVer. Publication is immutable: no `latest` authority. Record the exact source SHA and central workflow read-back evidence for the image and chart. The Flux repository owns cluster desired state and live rollout; this repository must not activate its own release in Kubernetes.
+Tagged releases use the thin caller in `.github/workflows/release.yml` and `StreamScapeTV/ci-workflows@main/.github/workflows/reusable-tag-image-chart.yml`. The Git tag, `package.json` version, `Chart.yaml` `version`, and `appVersion` must be the same canonical SemVer. Publication is immutable: no `latest` authority. Record the exact source SHA and central workflow read-back evidence for the image and chart. This repository must not activate its own release in Kubernetes; Flux #288 owns desired state and live rollout.
