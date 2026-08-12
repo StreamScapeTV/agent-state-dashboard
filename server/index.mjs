@@ -11,8 +11,17 @@ export const READABLE_TABLES = Object.freeze([
   "current_coordination",
 ]);
 
+const TABLE_ORDER_COLUMNS = Object.freeze({
+  current_projects: ["project_key"],
+  current_agents: ["project_key", "agent"],
+  current_work: ["project_key", "work_key"],
+  current_resources: ["project_key", "resource_key"],
+  current_coordination: ["project_key", "sender", "recipient"],
+});
+
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8788;
+const DEFAULT_PAGE_SIZE = 1_000;
 const DEFAULT_POLL_INTERVAL_MS = 15_000;
 const DEFAULT_HEARTBEAT_MS = 20_000;
 const DEFAULT_RECONNECT_MS = 1_000;
@@ -69,11 +78,29 @@ function normalizeReadError(error) {
   return normalized;
 }
 
-export async function readTable(client, table) {
+function pageSize(value) {
+  if (value === undefined) return DEFAULT_PAGE_SIZE;
+  if (!Number.isInteger(value) || value < 1) throw new TypeError("pageSize must be a positive integer");
+  return Math.min(value, DEFAULT_PAGE_SIZE);
+}
+
+export async function readTable(client, table, options = {}) {
   assertReadableTable(table);
-  const result = await client.from(table).select("*");
-  if (result.error) throw normalizeReadError(result.error);
-  return Array.isArray(result.data) ? result.data : [];
+  const limit = pageSize(options.pageSize);
+  const rows = [];
+
+  for (let from = 0; ; from += limit) {
+    let query = client.from(table).select("*");
+    for (const column of TABLE_ORDER_COLUMNS[table]) {
+      query = query.order(column, { ascending: true });
+    }
+    const result = await query.range(from, from + limit - 1);
+    if (result.error) throw normalizeReadError(result.error);
+
+    const currentPage = Array.isArray(result.data) ? result.data : [];
+    rows.push(...currentPage);
+    if (currentPage.length < limit) return rows;
+  }
 }
 
 export async function readSnapshot(client) {
