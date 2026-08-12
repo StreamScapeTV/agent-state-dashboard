@@ -15,4 +15,5 @@ AGENTS.md
 .env.*
 .dev.vars
 .dev.vars.*
+.npmrc
 .DS_Store
