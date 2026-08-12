@@ -96,6 +96,18 @@ test("Helm defaults use the exact existing Secret and Tailscale contract", () =>
   assert.match(service, /tailscale\.com\/proxy-group/);
 });
 
+test("Helm schema admits only existing-Secret Supabase references", () => {
+  const supabase = chartValuesSchema.properties?.supabase;
+  const existingSecret = supabase?.properties?.existingSecret;
+  assert.equal(supabase?.additionalProperties, false);
+  assert.deepEqual(Object.keys(supabase?.properties ?? {}), ["existingSecret"]);
+  assert.equal(existingSecret?.additionalProperties, false);
+  assert.deepEqual(
+    Object.keys(existingSecret?.properties ?? {}).sort(),
+    ["name", "secretKeyKey", "urlKey"],
+  );
+});
+
 test("Helm workload reads secrets by reference and has bounded probes/resources/security", () => {
   assert.match(deployment, /secretKeyRef:/);
   assert.match(deployment, /name: SUPABASE_URL/);
