@@ -13,4 +13,6 @@ AGENTS.md
 *.log
 .env
 .env.*
+.dev.vars
+.dev.vars.*
 .DS_Store
