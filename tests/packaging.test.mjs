@@ -46,6 +46,9 @@ test("container packages static export behind NGINX and a loopback Node data pro
   assert.match(dockerfile, new RegExp(`ARG NODE_VERSION=${nodeVersion.replaceAll(".", "\\.")}`));
   assert.match(dockerfile, /npm ci/);
   assert.match(dockerfile, /npm run build/);
+  assert.match(dockerfile, /test -f server\/index\.mjs/);
+  assert.match(dockerfile, /cp -R server\/\. \/opt\/dashboard\/server\//);
+  assert.doesNotMatch(dockerfile, /if \[ -d server \]/);
   assert.match(dockerfile, /COPY --from=build[^\n]*\/opt\/dashboard\/static/);
   assert.match(dockerfile, /EXPOSE 8080/);
   assert.match(dockerfile, /HEALTHCHECK[^\n]*--interval=30s/);
