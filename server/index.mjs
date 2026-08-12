@@ -240,8 +240,15 @@ export function createLiveController(client, options = {}) {
     }, pollIntervalMs);
     heartbeatTimer = setEvery(() => {
       for (const res of [...clients]) {
-        if (res.destroyed || res.writableEnded) clients.delete(res);
-        else res.write(": heartbeat\n\n");
+        if (res.destroyed || res.writableEnded) {
+          clients.delete(res);
+          continue;
+        }
+        try {
+          res.write(": heartbeat\n\n");
+        } catch {
+          clients.delete(res);
+        }
       }
     }, heartbeatMs);
   };
