@@ -193,12 +193,17 @@ test("project summaries preserve returned attention counts and current project f
   assert.equal(summary.nextAction, "Merge");
 });
 
-test("client source contract keeps live invalidation, attention sorting and keyboard controls wired", () => {
+test("client source contract keeps live invalidation, fallback freshness and keyboard controls wired", () => {
   const source = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
 
-  assert.match(source, /addEventListener\("invalidate", refreshFromEvent\)/);
+  assert.match(source, /addEventListener\("invalidate", invalidateFromEvent\)/);
   assert.match(source, /addEventListener\("refresh", refreshFromEvent\)/);
   assert.match(source, /addEventListener\("status", handleStatus\)/);
+  assert.match(source, /const refreshFromEvent = \(\) => \{[\s\S]*?requestRefresh\(\);[\s\S]*?\};/);
+  assert.match(source, /const invalidateFromEvent = \(\) => \{[\s\S]*?markLive\(\);[\s\S]*?requestRefresh\(\);[\s\S]*?\};/);
+  assert.doesNotMatch(source, /const refreshFromEvent = \(\) => \{\s*markLive\(\)/);
+  assert.match(source, /events\.onopen = \(\) => setLiveState\("connecting"\)/);
+  assert.match(source, /events\.onerror = \(\) => setLiveState\("reconnecting"\)/);
   assert.match(source, /onClick=\{\(\) => sort\("attention"\)\}/);
   assert.match(source, /<CardActionArea/);
   assert.match(source, /aria-pressed=\{selected\}/);
