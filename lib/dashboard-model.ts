@@ -64,6 +64,11 @@ function stringFrom(record: Record<string, unknown>, keys: string[]): string | n
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function rawStringFrom(record: Record<string, unknown>, keys: string[]): string | null {
+  const value = valueFrom(record, keys);
+  return typeof value === "string" ? value : null;
+}
+
 function rawTablesRoot(input: unknown): Record<string, unknown> {
   if (!isObject(input)) return {};
   const tables = input.tables;
@@ -95,10 +100,12 @@ function parseAgent(value: unknown): CurrentAgentRecord | null {
   return {
     projectKey,
     identity,
-    prompt: stringFrom(value, ["prompt", "current_prompt", "currentPrompt"]),
+    // Prompt/response are owner-visible authoritative text. Preserve their bytes
+    // instead of applying identifier/timestamp whitespace normalization.
+    prompt: rawStringFrom(value, ["prompt", "current_prompt", "currentPrompt"]),
     state: asJson(valueFrom(value, ["state", "actor_state", "actorState"]) ?? {}),
     promptAssignedAt: stringFrom(value, ["prompt_assigned_at", "promptAssignedAt"]),
-    lastResponse: stringFrom(value, ["last_response", "lastResponse"]),
+    lastResponse: rawStringFrom(value, ["last_response", "lastResponse"]),
     lastReturnedAt: stringFrom(value, ["last_returned_at", "lastReturnedAt"]),
   };
 }
@@ -162,7 +169,7 @@ function textSignalsBlocked(value: unknown, depth = 0): boolean {
     }
     if ((normalizedKey === "status" || normalizedKey === "phase") && typeof item === "string") {
       const normalizedValue = item.trim().toLowerCase();
-      if (normalizedValue === "blocked" || normalizedValue.startsWith("blocked:") || normalizedValue === "waiting") {
+      if (/^blocked(?:$|[:_\-\s])/.test(normalizedValue) || normalizedValue === "waiting") {
         return true;
       }
     }
