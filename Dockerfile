@@ -32,6 +32,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build --chown=node:node /opt/dashboard/server/ /app/server/
 COPY --from=build --chown=node:node /opt/dashboard/static/ /usr/share/nginx/html/
 COPY docker/nginx.conf /etc/nginx/nginx.conf
+COPY docker/security-headers.conf /etc/nginx/security-headers.conf
 COPY --chown=node:node docker/entrypoint.sh /usr/local/bin/agent-state-dashboard-entrypoint
 
 RUN chmod 0555 /usr/local/bin/agent-state-dashboard-entrypoint \
