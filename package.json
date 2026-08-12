@@ -10,6 +10,7 @@
     "build": "next build",
     "test": "node --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
+    "validate": "npm test && npm run typecheck && npm run build",
     "pages:functions": "wrangler pages functions build functions --outfile out/_worker.js --output-routes-path out/_routes.json",
     "pages:build": "npm run build && npm run pages:functions",
     "pages:dev": "wrangler pages dev out"
