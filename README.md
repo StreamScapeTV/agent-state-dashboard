@@ -82,7 +82,7 @@ Flux owns the actual cluster values and rollout; this repository owns only the p
 
 ## Development and validation
 
-Use Node `22.18.0` or newer with the committed npm lockfile.
+Use the committed Node `22.18.0` runtime from `.nvmrc` with the committed npm lockfile.
 
 ```bash
 npm ci
@@ -102,7 +102,7 @@ The package tests check the NGINX route contract, Secret references, Tailscale m
 
 ## Immutable release
 
-`.github/workflows/release.yml` is a thin tag-push caller of the organization release primitive. It does not choose a runner or container engine. The central workflow builds and publishes the multi-platform image and OCI chart to the existing private registry, then reads them back before success.
+`.github/workflows/release.yml` is a thin tag-push caller of the organization release primitive. It does not choose a runner or container engine. Before tagging, that caller must reference the reviewed central publisher by a full immutable `ci-workflows` commit SHA containing the required verified chart-digest contract; mutable `@main` is not release authority.
 
 For every release, keep these four versions identical before creating the tag:
 
@@ -118,7 +118,7 @@ git.faruqi.dev/mimranfaruqi/agent-state-dashboard:<version>
 oci://git.faruqi.dev/mimranfaruqi/helm-charts/agent-state-dashboard
 ```
 
-The workflow uses the repository secrets `FORGEJO_REGISTRY_USERNAME` and `FORGEJO_REGISTRY_TOKEN`, publishes no `latest` authority, retains no routine Actions artifact, and performs no deployment. Keep the exact source SHA plus verified remote image/chart digest evidence from the central workflow for the release handoff to Flux.
+The workflow uses the repository secrets `FORGEJO_REGISTRY_USERNAME` and `FORGEJO_REGISTRY_TOKEN`, publishes no `latest` authority, retains no routine Actions artifact, and performs no deployment. Keep the exact source SHA, immutable central publisher SHA, and verified remote image/chart digest evidence from the central workflow for the release handoff to Flux.
 
 The required evidence fields and Cloudflare retirement handoff are documented in [`docs/release.md`](docs/release.md). External Pages/Access removal follows successful Flux #288 activation; disabling the old service is never used as proof that the K3s release is healthy.
 
