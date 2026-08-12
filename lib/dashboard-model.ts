@@ -218,19 +218,20 @@ export function normalizeSnapshot(input: unknown, nowIso = new Date().toISOStrin
 }
 
 export function deriveBaseStatus(
-  agent: Pick<CurrentAgentRecord, "prompt" | "promptAssignedAt" | "lastReturnedAt">,
+  agent: Pick<CurrentAgentRecord, "promptAssignedAt" | "lastReturnedAt">,
   work: CurrentWorkRecord[],
 ): AgentBaseStatus {
   const assignedAt = parseTimestamp(agent.promptAssignedAt);
   const returnedAt = parseTimestamp(agent.lastReturnedAt);
-  const hasPrompt = Boolean(agent.prompt && agent.prompt.trim().length > 0);
-  const hasAssignment = assignedAt !== null || hasPrompt;
 
   if (assignedAt !== null) {
     if (returnedAt !== null && returnedAt >= assignedAt) return "returned";
     return "working";
   }
-  if (hasPrompt) return work.length > 0 ? "working" : "working";
+
+  // Rows that predate assignment observability deliberately keep NULL timestamps.
+  // Do not infer an active prompt from retained text; only current work can make
+  // such a row operationally active until a real future assignment is stamped.
   if (work.length > 0) return "working";
   return "idle";
 }
