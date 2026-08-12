@@ -131,7 +131,10 @@ test("Helm workload reads secrets by reference and has bounded probes/resources/
   assert.doesNotMatch(deployment, /value:\s*['"]?https?:\/\/[^\s]+supabase/);
 });
 
-test("release is a thin exact-tag central workflow caller with no product runner selection", () => {
+test("release is a thin bounded exact-tag central workflow caller", () => {
+  assert.match(releaseWorkflow, /run-name: Publish tagged dashboard release \$\{\{ github\.ref_name \}\}/);
+  assert.match(releaseWorkflow, /group: agent-state-dashboard-release-\$\{\{ github\.ref_name \}\}/);
+  assert.match(releaseWorkflow, /cancel-in-progress: false/);
   assert.match(releaseWorkflow, /reusable-tag-image-chart\.yml@main/);
   assert.match(releaseWorkflow, /image_name: agent-state-dashboard/);
   assert.match(releaseWorkflow, /chart_path: charts\/agent-state-dashboard/);
