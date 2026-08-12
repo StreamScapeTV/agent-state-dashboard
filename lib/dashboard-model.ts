@@ -38,6 +38,8 @@ export interface DashboardLiveDecision {
   refresh: boolean;
 }
 
+type IdentityIndex<T> = Map<string, Map<string, T[]>>;
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -229,6 +231,21 @@ function firstString(value: JsonValue, keys: string[], depth = 0): string | null
   return null;
 }
 
+function addIndexed<T>(index: IdentityIndex<T>, projectKey: string, identity: string, value: T) {
+  let project = index.get(projectKey);
+  if (!project) {
+    project = new Map<string, T[]>();
+    index.set(projectKey, project);
+  }
+  const existing = project.get(identity);
+  if (existing) existing.push(value);
+  else project.set(identity, [value]);
+}
+
+function indexed<T>(index: IdentityIndex<T>, projectKey: string, identity: string): T[] {
+  return index.get(projectKey)?.get(identity) ?? [];
+}
+
 export function normalizeSnapshot(input: unknown, nowIso = new Date().toISOString()): DashboardSnapshot {
   const root = rawTablesRoot(input);
   const missingTables: RawTableName[] = [];
@@ -314,18 +331,21 @@ export function identityKind(identity: string): IdentityKind {
 }
 
 export function buildAgentRows(snapshot: DashboardSnapshot, nowMs = Date.now()): AgentViewRow[] {
+  const workIndex: IdentityIndex<CurrentWorkRecord> = new Map();
+  const resourceIndex: IdentityIndex<CurrentResourceRecord> = new Map();
+  const coordinationIndex: IdentityIndex<CurrentCoordinationRecord> = new Map();
+
+  for (const item of snapshot.work) addIndexed(workIndex, item.projectKey, item.identity, item);
+  for (const item of snapshot.resources) addIndexed(resourceIndex, item.projectKey, item.identity, item);
+  for (const item of snapshot.coordination) {
+    addIndexed(coordinationIndex, item.projectKey, item.sender, item);
+    if (item.recipient !== item.sender) addIndexed(coordinationIndex, item.projectKey, item.recipient, item);
+  }
+
   return snapshot.agents.map((agent) => {
-    const work = snapshot.work.filter(
-      (item) => item.projectKey === agent.projectKey && item.identity === agent.identity,
-    );
-    const resources = snapshot.resources.filter(
-      (item) => item.projectKey === agent.projectKey && item.identity === agent.identity,
-    );
-    const coordination = snapshot.coordination.filter(
-      (item) =>
-        item.projectKey === agent.projectKey &&
-        (item.sender === agent.identity || item.recipient === agent.identity),
-    );
+    const work = indexed(workIndex, agent.projectKey, agent.identity);
+    const resources = indexed(resourceIndex, agent.projectKey, agent.identity);
+    const coordination = indexed(coordinationIndex, agent.projectKey, agent.identity);
     const baseStatus = deriveBaseStatus(agent, work);
     const blocked = isBlocked(agent.state, work);
     const workSummary =
@@ -355,6 +375,13 @@ export function buildAgentRows(snapshot: DashboardSnapshot, nowMs = Date.now()):
       workSummary,
       nextAction,
     };
+  });
+}
+
+export function refreshAgentDurations(rows: AgentViewRow[], nowMs = Date.now()): AgentViewRow[] {
+  return rows.map((row) => {
+    const nextDuration = durationMs(row.promptAssignedAt, row.lastReturnedAt, row.baseStatus, nowMs);
+    return nextDuration === row.durationMs ? row : { ...row, durationMs: nextDuration };
   });
 }
 
