@@ -41,6 +41,8 @@ The image build:
 5. starts the Node data process on loopback port `8788`;
 6. proxies `/healthz`, `/api/*`, and `/events` to that process.
 
+Both image stages use the same digest-pinned multi-platform Node base. Do not replace that digest pin with a mutable tag-only `FROM` reference during release work.
+
 `/_next/static/*` receives immutable long-lived caching. The Next build ID is derived from the `package.json` release version so build-scoped manifests move to a new immutable URL namespace on every versioned release instead of reusing the retired prototype's fixed cache path. Other frontend routes fall back to `index.html` so the single-screen client remains navigable. NGINX and the Node process run as a non-root user, and the Helm workload uses a read-only root filesystem with a bounded `/tmp` volume.
 
 `out/` is generated during builds and is intentionally ignored. Never commit a prebuilt browser/runtime deployment artifact.
