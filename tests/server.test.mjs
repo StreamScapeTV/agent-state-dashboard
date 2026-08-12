@@ -53,13 +53,33 @@ function createFakeClient(fixtures = {}) {
   };
 }
 
+function createSseFixture() {
+  const writes = [];
+  const req = { on() {} };
+  const res = {
+    destroyed: false,
+    writableEnded: false,
+    writeHead(status, headers) {
+      this.status = status;
+      this.headers = headers;
+    },
+    write(chunk) {
+      writes.push(chunk);
+    },
+    end() {
+      this.writableEnded = true;
+    },
+  };
+  return { req, res, writes };
+}
+
 async function listen(runtime) {
   const address = await runtime.start();
   assert.equal(typeof address, "object");
   return `http://127.0.0.1:${address.port}`;
 }
 
-test("runtime config requires server-only Supabase values and validates port", () => {
+test("runtime config requires server-only Supabase values and validates loopback fallbacks", () => {
   assert.throws(() => readRuntimeConfig({}), /SUPABASE_URL/);
   assert.throws(
     () => readRuntimeConfig({ SUPABASE_URL: "https://example.invalid", SUPABASE_SECRET_KEY: "secret", PORT: "nope" }),
@@ -72,6 +92,22 @@ test("runtime config requires server-only Supabase values and validates port", (
       supabaseSecretKey: "secret",
       host: "127.0.0.1",
       port: 8788,
+    },
+  );
+  assert.deepEqual(
+    readRuntimeConfig({
+      SUPABASE_URL: "https://example.invalid",
+      SUPABASE_SECRET_KEY: "secret",
+      HOST: "   ",
+      SERVER_HOST: "127.0.0.2",
+      PORT: "   ",
+      SERVER_PORT: "9876",
+    }),
+    {
+      supabaseUrl: "https://example.invalid",
+      supabaseSecretKey: "secret",
+      host: "127.0.0.2",
+      port: 9876,
     },
   );
 });
@@ -115,7 +151,7 @@ test("snapshot reads all five tables and preserves authoritative current-agent f
   assert.deepEqual(client.reads, READABLE_TABLES.map((table) => ({ table, selection: "*" })));
 });
 
-test("Realtime subscribes to all five tables and reconnects after a channel error", async () => {
+test("Realtime subscribes to all five tables, removes failed channels, and ignores stale callbacks", async () => {
   const client = createFakeClient();
   const scheduled = [];
   const intervals = [];
@@ -145,13 +181,67 @@ test("Realtime subscribes to all five tables and reconnects after a channel erro
     })),
   );
 
-  client.channels[0].statusCallback("SUBSCRIBED");
+  const firstChannel = client.channels[0];
+  firstChannel.statusCallback("SUBSCRIBED");
   assert.equal(live.status(), "live");
-  client.channels[0].statusCallback("CHANNEL_ERROR");
+  firstChannel.statusCallback("CHANNEL_ERROR");
   assert.equal(live.status(), "reconnecting");
+  assert.equal(firstChannel.removed, true);
   assert.equal(scheduled.length, 1);
-  await scheduled[0].callback();
+
+  scheduled[0].callback();
   assert.equal(client.channels.length, 2);
+  const secondChannel = client.channels[1];
+  secondChannel.statusCallback("SUBSCRIBED");
+  assert.equal(live.status(), "live");
+
+  firstChannel.statusCallback("CLOSED");
+  assert.equal(live.status(), "live");
+  assert.equal(scheduled.length, 1);
+
+  secondChannel.statusCallback("TIMED_OUT");
+  assert.equal(live.status(), "reconnecting");
+  assert.equal(secondChannel.removed, true);
+  assert.equal(scheduled.length, 2);
+  await live.stop();
+});
+
+test("Realtime invalidation events identify the changed table and operation without exposing row data", async () => {
+  const client = createFakeClient();
+  const live = createLiveController(client, {
+    setInterval() {
+      return 1;
+    },
+    clearInterval() {},
+    setTimeout() {
+      return 1;
+    },
+    clearTimeout() {},
+  });
+  const { req, res, writes } = createSseFixture();
+
+  live.start();
+  live.attach(req, res);
+  const agentHandler = client.channels[0].handlers.find(
+    ({ filter }) => filter.table === "current_agents",
+  );
+  assert.ok(agentHandler);
+
+  for (const eventType of ["INSERT", "UPDATE", "DELETE"]) {
+    agentHandler.callback({
+      eventType,
+      new: { prompt: "must-not-be-emitted" },
+      old: { last_response: "must-not-be-emitted" },
+    });
+  }
+
+  const output = writes.join("");
+  assert.match(output, /event: invalidate/);
+  assert.match(output, /"table":"current_agents"/);
+  assert.match(output, /"eventType":"INSERT"/);
+  assert.match(output, /"eventType":"UPDATE"/);
+  assert.match(output, /"eventType":"DELETE"/);
+  assert.doesNotMatch(output, /must-not-be-emitted/);
   await live.stop();
 });
 
@@ -185,7 +275,9 @@ test("HTTP surface is GET-only, read-only, allowlisted, and does not expose conf
   assert.equal(snapshot.status, 200);
   const snapshotText = await snapshot.text();
   assert.doesNotMatch(snapshotText, /sensitive|super-secret/);
-  assert.equal(JSON.parse(snapshotText).tables.current_projects[0].project_key, "dashboard");
+  const snapshotBody = JSON.parse(snapshotText);
+  assert.equal(snapshotBody.tables.current_projects[0].project_key, "dashboard");
+  assert.equal(Number.isNaN(Date.parse(snapshotBody.refreshedAt)), false);
 
   const table = await fetch(`${base}/api/tables/current_projects`);
   assert.equal(table.status, 200);
@@ -202,7 +294,39 @@ test("HTTP surface is GET-only, read-only, allowlisted, and does not expose conf
   assert.equal(arbitrary.status, 404);
 });
 
-test("SSE emits initial refresh and polling fallback so clients can refetch after disconnects", async () => {
+test("Supabase read failures return a generic response without leaking raw configuration or provider errors", async (t) => {
+  const client = createFakeClient();
+  client.from = () => ({
+    async select() {
+      return {
+        data: null,
+        error: {
+          message: "failed against https://sensitive.example.invalid with super-secret-value",
+        },
+      };
+    },
+  });
+  const runtime = createDashboardServer({
+    config: {
+      supabaseUrl: "https://sensitive.example.invalid",
+      supabaseSecretKey: "super-secret-value",
+      host: "127.0.0.1",
+      port: 0,
+    },
+    client,
+    liveOptions: { pollIntervalMs: 60_000, heartbeatMs: 60_000 },
+  });
+  t.after(() => runtime.stop());
+  const base = await listen(runtime);
+
+  const response = await fetch(`${base}/api/snapshot`);
+  assert.equal(response.status, 503);
+  const body = await response.text();
+  assert.equal(body, JSON.stringify({ error: "agent_state_unavailable" }));
+  assert.doesNotMatch(body, /sensitive|super-secret|failed against/);
+});
+
+test("SSE emits retry guidance, initial refresh, and polling fallback", async () => {
   const client = createFakeClient();
   const intervals = [];
   const live = createLiveController(client, {
@@ -217,32 +341,50 @@ test("SSE emits initial refresh and polling fallback so clients can refetch afte
     clearTimeout() {},
     pollIntervalMs: 25,
     heartbeatMs: 50,
+    sseRetryMs: 1234,
   });
-  const writes = [];
-  const req = { on() {} };
-  const res = {
-    destroyed: false,
-    writableEnded: false,
-    writeHead(status, headers) {
-      this.status = status;
-      this.headers = headers;
-    },
-    write(chunk) {
-      writes.push(chunk);
-    },
-    end() {
-      this.writableEnded = true;
-    },
-  };
+  const { req, res, writes } = createSseFixture();
 
   live.start();
   live.attach(req, res);
   assert.equal(res.status, 200);
   assert.equal(res.headers["content-type"], "text/event-stream; charset=utf-8");
+  assert.match(writes.join(""), /retry: 1234/);
   assert.match(writes.join(""), /event: refresh/);
   assert.match(writes.join(""), /"source":"initial"/);
 
   intervals[0].callback();
   assert.match(writes.join(""), /"source":"polling-fallback"/);
   await live.stop();
+});
+
+test("listen failure cleans up the live controller so timers and subscriptions do not keep the process alive", async (t) => {
+  const first = createDashboardServer({
+    config: {
+      supabaseUrl: "https://example.invalid",
+      supabaseSecretKey: "secret",
+      host: "127.0.0.1",
+      port: 0,
+    },
+    client: createFakeClient(),
+    liveOptions: { pollIntervalMs: 60_000, heartbeatMs: 60_000 },
+  });
+  t.after(() => first.stop());
+  const firstAddress = await first.start();
+  assert.equal(typeof firstAddress, "object");
+
+  const second = createDashboardServer({
+    config: {
+      supabaseUrl: "https://example.invalid",
+      supabaseSecretKey: "secret",
+      host: "127.0.0.1",
+      port: firstAddress.port,
+    },
+    client: createFakeClient(),
+    liveOptions: { pollIntervalMs: 60_000, heartbeatMs: 60_000 },
+  });
+
+  await assert.rejects(second.start(), (error) => error?.code === "EADDRINUSE");
+  assert.equal(second.live.status(), "stopped");
+  assert.equal(second.server.listening, false);
 });
