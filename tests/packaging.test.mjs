@@ -10,6 +10,7 @@ const [
   nginx,
   chart,
   values,
+  valuesSchema,
   deployment,
   service,
   releaseWorkflow,
@@ -20,6 +21,7 @@ const [
   read("docker/nginx.conf"),
   read("charts/agent-state-dashboard/Chart.yaml"),
   read("charts/agent-state-dashboard/values.yaml"),
+  read("charts/agent-state-dashboard/values.schema.json"),
   read("charts/agent-state-dashboard/templates/deployment.yaml"),
   read("charts/agent-state-dashboard/templates/service.yaml"),
   read(".github/workflows/release.yml"),
@@ -27,6 +29,7 @@ const [
 ]);
 
 const packageJson = JSON.parse(packageJsonSource);
+const chartValuesSchema = JSON.parse(valuesSchema);
 
 test("container packages static export behind NGINX and a loopback Node data process", () => {
   assert.match(dockerfile, /ARG NODE_VERSION=22\.18\.0/);
@@ -34,6 +37,8 @@ test("container packages static export behind NGINX and a loopback Node data pro
   assert.match(dockerfile, /npm run build/);
   assert.match(dockerfile, /COPY --from=build[^\n]*\/opt\/dashboard\/static/);
   assert.match(dockerfile, /EXPOSE 8080/);
+  assert.match(dockerfile, /HEALTHCHECK[^\n]*--interval=30s/);
+  assert.match(dockerfile, /127\.0\.0\.1:8080\/healthz/);
   assert.match(entrypoint, /SERVER_ENTRYPOINT:-\/app\/server\/index\.mjs/);
   assert.match(entrypoint, /SUPABASE_URL/);
   assert.match(entrypoint, /SUPABASE_SECRET_KEY/);
@@ -55,6 +60,7 @@ test("NGINX proxies only the local data routes and gives immutable static assets
 test("Helm defaults use the exact existing Secret and Tailscale contract", () => {
   assert.match(chart, /version: 0\.1\.0/);
   assert.match(chart, /appVersion: "0\.1\.0"/);
+  assert.equal(chartValuesSchema.$schema, "http://json-schema.org/draft-07/schema#");
   assert.match(values, /name: agent-state-dashboard-supabase/);
   assert.match(values, /urlKey: SUPABASE_URL/);
   assert.match(values, /secretKeyKey: SUPABASE_SECRET_KEY/);
@@ -80,6 +86,7 @@ test("Helm workload reads secrets by reference and has bounded probes/resources/
   assert.match(deployment, /resources:/);
   assert.match(deployment, /automountServiceAccountToken: false/);
   assert.match(deployment, /imagePullSecrets:/);
+  assert.match(deployment, /readOnlyRootFilesystem: true/);
   assert.doesNotMatch(deployment, /value:\s*['"]?https?:\/\/[^\s]+supabase/);
 });
 
