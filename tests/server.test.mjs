@@ -30,21 +30,10 @@ function createFakeClient(fixtures = {}, errors = {}, maxRows = Infinity) {
               return query;
             },
             async range(from, to) {
-              reads.push({
-                table,
-                selection,
-                selectOptions,
-                orders: [...orders],
-                from,
-                to,
-              });
-              if (errors[table]) {
-                return { data: null, error: errors[table], count: null };
-              }
+              reads.push({ table, selection, selectOptions, orders: [...orders], from, to });
+              if (errors[table]) return { data: null, error: errors[table], count: null };
               const rows = fixtures[table] ?? [];
-              const effectiveTo = Number.isFinite(maxRows)
-                ? Math.min(to, from + maxRows - 1)
-                : to;
+              const effectiveTo = Number.isFinite(maxRows) ? Math.min(to, from + maxRows - 1) : to;
               return {
                 data: rows.slice(from, effectiveTo + 1),
                 error: null,
@@ -116,12 +105,7 @@ test("runtime config requires server-only Supabase values and validates loopback
   );
   assert.deepEqual(
     readRuntimeConfig({ SUPABASE_URL: " https://example.invalid ", SUPABASE_SECRET_KEY: " secret " }),
-    {
-      supabaseUrl: "https://example.invalid",
-      supabaseSecretKey: "secret",
-      host: "127.0.0.1",
-      port: 8788,
-    },
+    { supabaseUrl: "https://example.invalid", supabaseSecretKey: "secret", host: "127.0.0.1", port: 8788 },
   );
   assert.deepEqual(
     readRuntimeConfig({
@@ -132,12 +116,7 @@ test("runtime config requires server-only Supabase values and validates loopback
       PORT: "   ",
       SERVER_PORT: "9876",
     }),
-    {
-      supabaseUrl: "https://example.invalid",
-      supabaseSecretKey: "secret",
-      host: "127.0.0.2",
-      port: 9876,
-    },
+    { supabaseUrl: "https://example.invalid", supabaseSecretKey: "secret", host: "127.0.0.2", port: 9876 },
   );
 });
 
@@ -264,10 +243,7 @@ test("Realtime subscribes to all five tables, removes failed channels, and ignor
   assert.equal(client.channels.length, 1);
   assert.deepEqual(
     client.channels[0].handlers.map(({ kind, filter }) => ({ kind, filter })),
-    READABLE_TABLES.map((table) => ({
-      kind: "postgres_changes",
-      filter: { event: "*", schema: AGENT_STATE_SCHEMA, table },
-    })),
+    READABLE_TABLES.map((table) => ({ kind: "postgres_changes", filter: { event: "*", schema: AGENT_STATE_SCHEMA, table } })),
   );
 
   const firstChannel = client.channels[0];
@@ -298,22 +274,16 @@ test("Realtime subscribes to all five tables, removes failed channels, and ignor
 test("Realtime invalidation events identify the changed table and operation without exposing row data", async () => {
   const client = createFakeClient();
   const live = createLiveController(client, {
-    setInterval() {
-      return 1;
-    },
+    setInterval() { return 1; },
     clearInterval() {},
-    setTimeout() {
-      return 1;
-    },
+    setTimeout() { return 1; },
     clearTimeout() {},
   });
   const { req, res, writes } = createSseFixture();
 
   live.start();
   live.attach(req, res);
-  const agentHandler = client.channels[0].handlers.find(
-    ({ filter }) => filter.table === "current_agents",
-  );
+  const agentHandler = client.channels[0].handlers.find(({ filter }) => filter.table === "current_agents");
   assert.ok(agentHandler);
 
   for (const eventType of ["INSERT", "UPDATE", "DELETE"]) {
@@ -385,9 +355,7 @@ test("HTTP surface is GET-only, read-only, allowlisted, and does not expose conf
 
 test("Supabase read failures return a generic response without leaking raw configuration or provider errors", async (t) => {
   const client = createFakeClient({}, {
-    current_projects: {
-      message: "failed against https://sensitive.example.invalid with super-secret-value",
-    },
+    current_projects: { message: "failed against https://sensitive.example.invalid with super-secret-value" },
   });
   const runtime = createDashboardServer({
     config: {
@@ -418,9 +386,7 @@ test("SSE emits retry guidance, initial refresh, and polling fallback", async ()
       return intervals.length;
     },
     clearInterval() {},
-    setTimeout() {
-      return 1;
-    },
+    setTimeout() { return 1; },
     clearTimeout() {},
     pollIntervalMs: 25,
     heartbeatMs: 50,
@@ -441,14 +407,34 @@ test("SSE emits retry guidance, initial refresh, and polling fallback", async ()
   await live.stop();
 });
 
+test("SSE heartbeat drops a broken client writer instead of throwing from the timer callback", async () => {
+  const client = createFakeClient();
+  const intervals = [];
+  const live = createLiveController(client, {
+    setInterval(callback, delay) {
+      intervals.push({ callback, delay });
+      return intervals.length;
+    },
+    clearInterval() {},
+    setTimeout() { return 1; },
+    clearTimeout() {},
+    pollIntervalMs: 25,
+    heartbeatMs: 50,
+  });
+  const { req, res } = createSseFixture();
+
+  live.start();
+  live.attach(req, res);
+  assert.equal(intervals.length, 2);
+  res.write = () => { throw new Error("broken SSE client"); };
+  assert.doesNotThrow(() => intervals[1].callback());
+  assert.doesNotThrow(() => live.broadcast("refresh", { source: "after-broken-client" }));
+  await live.stop();
+});
+
 test("listen failure cleans up the live controller so timers and subscriptions do not keep the process alive", async (t) => {
   const first = createDashboardServer({
-    config: {
-      supabaseUrl: "https://example.invalid",
-      supabaseSecretKey: "secret",
-      host: "127.0.0.1",
-      port: 0,
-    },
+    config: { supabaseUrl: "https://example.invalid", supabaseSecretKey: "secret", host: "127.0.0.1", port: 0 },
     client: createFakeClient(),
     liveOptions: { pollIntervalMs: 60_000, heartbeatMs: 60_000 },
   });
