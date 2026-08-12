@@ -11,7 +11,7 @@ import {
   readTable,
 } from "../server/index.mjs";
 
-function createFakeClient(fixtures = {}, errors = {}) {
+function createFakeClient(fixtures = {}, errors = {}, maxRows = Infinity) {
   const subscriptions = [];
   const channels = [];
   const reads = [];
@@ -22,7 +22,7 @@ function createFakeClient(fixtures = {}, errors = {}) {
     reads,
     from(table) {
       return {
-        select(selection) {
+        select(selection, selectOptions) {
           const orders = [];
           const query = {
             order(column, options) {
@@ -30,10 +30,26 @@ function createFakeClient(fixtures = {}, errors = {}) {
               return query;
             },
             async range(from, to) {
-              reads.push({ table, selection, orders: [...orders], from, to });
-              if (errors[table]) return { data: null, error: errors[table] };
+              reads.push({
+                table,
+                selection,
+                selectOptions,
+                orders: [...orders],
+                from,
+                to,
+              });
+              if (errors[table]) {
+                return { data: null, error: errors[table], count: null };
+              }
               const rows = fixtures[table] ?? [];
-              return { data: rows.slice(from, to + 1), error: null };
+              const effectiveTo = Number.isFinite(maxRows)
+                ? Math.min(to, from + maxRows - 1)
+                : to;
+              return {
+                data: rows.slice(from, effectiveTo + 1),
+                error: null,
+                count: selectOptions?.count === "exact" ? rows.length : null,
+              };
             },
           };
           return query;
@@ -137,48 +153,58 @@ test("table allowlist is exactly the five current Agent State authority tables",
   assert.throws(() => assertReadableTable("current_history"), /Unknown Agent State table/);
 });
 
-test("table reads paginate deterministically so Data API row limits cannot truncate current state", async () => {
+test("table reads remain complete when the Data API caps pages below the requested range", async () => {
   const resources = Array.from({ length: 5 }, (_, index) => ({
     project_key: "dashboard",
     resource_key: `resource-${index + 1}`,
     agent: "Agent 1",
   }));
-  const client = createFakeClient({ current_resources: resources });
-  const rows = await readTable(client, "current_resources", { pageSize: 2 });
+  const client = createFakeClient({ current_resources: resources }, {}, 2);
+  const rows = await readTable(client, "current_resources", { pageSize: 4 });
 
   assert.deepEqual(rows, resources);
   assert.deepEqual(
-    client.reads.map(({ table, selection, orders, from, to }) => ({ table, selection, orders, from, to })),
+    client.reads.map(({ table, selection, selectOptions, orders, from, to }) => ({
+      table,
+      selection,
+      selectOptions,
+      orders,
+      from,
+      to,
+    })),
     [
       {
         table: "current_resources",
         selection: "*",
+        selectOptions: { count: "exact" },
         orders: [
           { column: "project_key", options: { ascending: true } },
           { column: "resource_key", options: { ascending: true } },
         ],
         from: 0,
-        to: 1,
-      },
-      {
-        table: "current_resources",
-        selection: "*",
-        orders: [
-          { column: "project_key", options: { ascending: true } },
-          { column: "resource_key", options: { ascending: true } },
-        ],
-        from: 2,
         to: 3,
       },
       {
         table: "current_resources",
         selection: "*",
+        selectOptions: undefined,
+        orders: [
+          { column: "project_key", options: { ascending: true } },
+          { column: "resource_key", options: { ascending: true } },
+        ],
+        from: 2,
+        to: 5,
+      },
+      {
+        table: "current_resources",
+        selection: "*",
+        selectOptions: undefined,
         orders: [
           { column: "project_key", options: { ascending: true } },
           { column: "resource_key", options: { ascending: true } },
         ],
         from: 4,
-        to: 5,
+        to: 7,
       },
     ],
   );
@@ -211,6 +237,7 @@ test("snapshot reads all five tables and preserves authoritative current-agent f
   assert.equal(snapshot.current_agents[0].last_returned_at, "2026-08-12T01:01:00Z");
   assert.deepEqual(client.reads.map(({ table }) => table).sort(), [...READABLE_TABLES].sort());
   assert.ok(client.reads.every(({ from, to }) => from === 0 && to === 999));
+  assert.ok(client.reads.every(({ selectOptions }) => selectOptions?.count === "exact"));
 });
 
 test("Realtime subscribes to all five tables, removes failed channels, and ignores stale callbacks", async () => {
