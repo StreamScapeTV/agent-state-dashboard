@@ -26,8 +26,14 @@ export SERVER_HOST SERVER_PORT
 export HOST="${HOST:-${SERVER_HOST}}"
 export PORT="${PORT:-${SERVER_PORT}}"
 
+# Spawn the data process while the Kubernetes Secret-backed variables are still
+# in the environment, then remove them from the supervising shell before NGINX
+# is started so the static/proxy process does not inherit privileged Supabase
+# configuration it never uses.
 node "${SERVER_ENTRYPOINT}" &
 server_pid=$!
+unset SUPABASE_URL SUPABASE_SECRET_KEY
+
 nginx -g 'daemon off;' &
 nginx_pid=$!
 
