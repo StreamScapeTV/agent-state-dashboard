@@ -104,6 +104,18 @@ test("blocked status variants used by current Agent State are recognized", () =>
   assert.equal(model.isBlocked({ status: "working" }, []), false);
 });
 
+test("live event policy separates fallback freshness from Realtime connection state", () => {
+  assert.deepEqual(model.liveEventDecision("open"), { state: "connecting", refresh: false });
+  assert.deepEqual(model.liveEventDecision("error"), { state: "reconnecting", refresh: false });
+  assert.deepEqual(model.liveEventDecision("refresh"), { state: null, refresh: true });
+  assert.deepEqual(model.liveEventDecision("invalidate"), { state: "live", refresh: true });
+  assert.deepEqual(model.liveEventDecision("status", '{"status":"live"}'), { state: "live", refresh: false });
+  assert.deepEqual(model.liveEventDecision("status", '{"status":"starting"}'), { state: "connecting", refresh: false });
+  assert.deepEqual(model.liveEventDecision("status", { status: "reconnecting" }), { state: "reconnecting", refresh: false });
+  assert.deepEqual(model.liveEventDecision("status", '{"status":"unknown"}'), { state: null, refresh: false });
+  assert.deepEqual(model.liveEventDecision("status", "not-json"), { state: null, refresh: false });
+});
+
 test("duration stays live while working and freezes at return", () => {
   const assigned = "2026-08-12T00:00:00Z";
   const returned = "2026-08-12T00:05:30Z";
@@ -211,17 +223,15 @@ test("project summaries preserve returned attention counts and current project f
   assert.equal(summary.nextAction, "Merge");
 });
 
-test("client source contract keeps live invalidation, fallback freshness and keyboard controls wired", () => {
+test("client source contract delegates live transitions and keeps keyboard controls wired", () => {
   const source = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
 
-  assert.match(source, /addEventListener\("invalidate", invalidateFromEvent\)/);
-  assert.match(source, /addEventListener\("refresh", refreshFromEvent\)/);
-  assert.match(source, /addEventListener\("status", handleStatus\)/);
-  assert.match(source, /const refreshFromEvent = \(\) => \{[\s\S]*?requestRefresh\(\);[\s\S]*?\};/);
-  assert.match(source, /const invalidateFromEvent = \(\) => \{[\s\S]*?markLive\(\);[\s\S]*?requestRefresh\(\);[\s\S]*?\};/);
-  assert.doesNotMatch(source, /const refreshFromEvent = \(\) => \{\s*markLive\(\)/);
-  assert.match(source, /events\.onopen = \(\) => setLiveState\("connecting"\)/);
-  assert.match(source, /events\.onerror = \(\) => setLiveState\("reconnecting"\)/);
+  assert.match(source, /liveEventDecision\(kind, payload\)/);
+  assert.match(source, /const refreshFromEvent = \(\) => applyLiveEvent\("refresh"\)/);
+  assert.match(source, /const invalidateFromEvent = \(\) => applyLiveEvent\("invalidate"\)/);
+  assert.match(source, /applyLiveEvent\("status", event\.data\)/);
+  assert.match(source, /events\.onopen = \(\) => applyLiveEvent\("open"\)/);
+  assert.match(source, /events\.onerror = \(\) => applyLiveEvent\("error"\)/);
   assert.match(source, /onClick=\{\(\) => sort\("attention"\)\}/);
   assert.match(source, /<CardActionArea/);
   assert.match(source, /aria-pressed=\{selected\}/);
