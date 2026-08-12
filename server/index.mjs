@@ -16,6 +16,7 @@ const DEFAULT_PORT = 8788;
 const DEFAULT_POLL_INTERVAL_MS = 15_000;
 const DEFAULT_HEARTBEAT_MS = 20_000;
 const DEFAULT_RECONNECT_MS = 1_000;
+const DEFAULT_SSE_RETRY_MS = 3_000;
 const MAX_RECONNECT_MS = 30_000;
 
 function text(value) {
@@ -28,8 +29,8 @@ export function readRuntimeConfig(env = process.env) {
   if (!supabaseUrl) throw new Error("Missing required server environment variable: SUPABASE_URL");
   if (!supabaseSecretKey) throw new Error("Missing required server environment variable: SUPABASE_SECRET_KEY");
 
-  const host = text(env.HOST || env.SERVER_HOST) || DEFAULT_HOST;
-  const rawPort = text(env.PORT || env.SERVER_PORT);
+  const host = text(env.HOST) || text(env.SERVER_HOST) || DEFAULT_HOST;
+  const rawPort = text(env.PORT) || text(env.SERVER_PORT);
   const port = rawPort ? Number(rawPort) : DEFAULT_PORT;
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
     throw new Error("PORT must be an integer between 0 and 65535");
@@ -64,7 +65,6 @@ export function createSupabaseClient(config) {
 function normalizeReadError(error) {
   if (!error) return null;
   const normalized = new Error("Agent State read failed");
-  normalized.cause = error;
   normalized.statusCode = 503;
   return normalized;
 }
@@ -106,6 +106,7 @@ export function createLiveController(client, options = {}) {
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const heartbeatMs = options.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
   const initialReconnectMs = options.reconnectMs ?? DEFAULT_RECONNECT_MS;
+  const sseRetryMs = options.sseRetryMs ?? DEFAULT_SSE_RETRY_MS;
 
   const clients = new Set();
   let channel = null;
@@ -135,51 +136,62 @@ export function createLiveController(client, options = {}) {
     broadcast("status", { status });
   };
 
+  const removeChannel = async (target) => {
+    if (!target || typeof client.removeChannel !== "function") return;
+    try {
+      await client.removeChannel(target);
+    } catch {
+      // Realtime cleanup is best-effort; reconnect/refetch remains authoritative.
+    }
+  };
+
   const scheduleReconnect = () => {
     if (stopped || reconnectTimer) return;
     setStatus("reconnecting");
-    reconnectTimer = setTimer(async () => {
+    reconnectTimer = setTimer(() => {
       reconnectTimer = null;
-      try {
-        if (channel && typeof client.removeChannel === "function") {
-          await client.removeChannel(channel);
-        }
-      } catch {
-        // Best-effort cleanup before subscribing again.
-      }
-      channel = null;
-      subscribe();
+      if (!channel) subscribe();
     }, reconnectDelay);
     reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_MS);
   };
 
   const subscribe = () => {
     if (stopped || channel) return;
-    let nextChannel = client.channel("agent-state-dashboard-current");
-    for (const table of READABLE_TABLES) {
-      nextChannel = nextChannel.on(
-        "postgres_changes",
-        { event: "*", schema: AGENT_STATE_SCHEMA, table },
-        (payload) => {
-          broadcast("invalidate", {
-            table,
-            eventType: payload?.eventType ?? "unknown",
-          });
-        },
-      );
+
+    let nextChannel;
+    try {
+      nextChannel = client.channel("agent-state-dashboard-current");
+      for (const table of READABLE_TABLES) {
+        nextChannel = nextChannel.on(
+          "postgres_changes",
+          { event: "*", schema: AGENT_STATE_SCHEMA, table },
+          (payload) => {
+            broadcast("invalidate", {
+              table,
+              eventType: payload?.eventType ?? "unknown",
+            });
+          },
+        );
+      }
+      channel = nextChannel;
+      nextChannel.subscribe((status) => {
+        if (stopped || channel !== nextChannel) return;
+        if (status === "SUBSCRIBED") {
+          reconnectDelay = initialReconnectMs;
+          setStatus("live");
+          return;
+        }
+        if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
+          channel = null;
+          void removeChannel(nextChannel);
+          scheduleReconnect();
+        }
+      });
+    } catch {
+      if (channel === nextChannel) channel = null;
+      void removeChannel(nextChannel);
+      scheduleReconnect();
     }
-    channel = nextChannel;
-    channel.subscribe((status) => {
-      if (status === "SUBSCRIBED") {
-        reconnectDelay = initialReconnectMs;
-        setStatus("live");
-        return;
-      }
-      if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
-        channel = null;
-        scheduleReconnect();
-      }
-    });
   };
 
   const start = () => {
@@ -203,6 +215,7 @@ export function createLiveController(client, options = {}) {
       connection: "keep-alive",
       "x-accel-buffering": "no",
     });
+    res.write(`retry: ${sseRetryMs}\n\n`);
     clients.add(res);
     sseWrite(res, "status", { status: liveStatus });
     sseWrite(res, "refresh", { source: "initial" });
@@ -221,14 +234,9 @@ export function createLiveController(client, options = {}) {
       if (!res.writableEnded) res.end();
     }
     clients.clear();
-    if (channel && typeof client.removeChannel === "function") {
-      try {
-        await client.removeChannel(channel);
-      } catch {
-        // Shutdown remains best-effort.
-      }
-    }
+    const activeChannel = channel;
     channel = null;
+    await removeChannel(activeChannel);
     liveStatus = "stopped";
   };
 
@@ -255,7 +263,8 @@ export function createRequestHandler({ client, live }) {
         return;
       }
       if (url.pathname === "/api/snapshot") {
-        json(res, 200, { tables: await readSnapshot(client) });
+        const tables = await readSnapshot(client);
+        json(res, 200, { tables, refreshedAt: new Date().toISOString() });
         return;
       }
       if (url.pathname.startsWith("/api/tables/")) {
@@ -290,21 +299,30 @@ export function createDashboardServer(options = {}) {
     live,
     server,
     async start() {
-      live.start();
-      await new Promise((resolve, reject) => {
-        const onError = (error) => {
-          server.off("listening", onListening);
-          reject(error);
-        };
-        const onListening = () => {
-          server.off("error", onError);
-          resolve();
-        };
-        server.once("error", onError);
-        server.once("listening", onListening);
-        server.listen(config.port, config.host);
-      });
-      return server.address();
+      try {
+        live.start();
+        await new Promise((resolve, reject) => {
+          const onError = (error) => {
+            server.off("listening", onListening);
+            reject(error);
+          };
+          const onListening = () => {
+            server.off("error", onError);
+            resolve();
+          };
+          server.once("error", onError);
+          server.once("listening", onListening);
+          server.listen(config.port, config.host);
+        });
+        return server.address();
+      } catch (error) {
+        try {
+          await live.stop();
+        } catch {
+          // Preserve the original startup failure without leaking cleanup details.
+        }
+        throw error;
+      }
     },
     async stop() {
       await live.stop();
@@ -330,8 +348,8 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error) => {
-    console.error(error instanceof Error ? error.message : "Server startup failed");
+  main().catch(() => {
+    console.error("Server startup failed");
     process.exitCode = 1;
   });
 }
