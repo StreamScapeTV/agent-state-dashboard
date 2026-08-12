@@ -15,6 +15,7 @@ const [
   service,
   releaseWorkflow,
   packageJsonSource,
+  nodeVersionSource,
 ] = await Promise.all([
   read("Dockerfile"),
   read("docker/entrypoint.sh"),
@@ -26,13 +27,17 @@ const [
   read("charts/agent-state-dashboard/templates/service.yaml"),
   read(".github/workflows/release.yml"),
   read("package.json"),
+  read(".nvmrc"),
 ]);
 
 const packageJson = JSON.parse(packageJsonSource);
 const chartValuesSchema = JSON.parse(valuesSchema);
+const nodeVersion = nodeVersionSource.trim();
+const chartVersion = chart.match(/^version:\s*([^\s]+)$/m)?.[1];
+const chartAppVersion = chart.match(/^appVersion:\s*["']?([^"'\s]+)["']?$/m)?.[1];
 
 test("container packages static export behind NGINX and a loopback Node data process", () => {
-  assert.match(dockerfile, /ARG NODE_VERSION=22\.18\.0/);
+  assert.match(dockerfile, new RegExp(`ARG NODE_VERSION=${nodeVersion.replaceAll(".", "\\.")}`));
   assert.match(dockerfile, /npm ci/);
   assert.match(dockerfile, /npm run build/);
   assert.match(dockerfile, /COPY --from=build[^\n]*\/opt\/dashboard\/static/);
@@ -58,8 +63,8 @@ test("NGINX proxies only the local data routes and gives immutable static assets
 });
 
 test("Helm defaults use the exact existing Secret and Tailscale contract", () => {
-  assert.match(chart, /version: 0\.1\.0/);
-  assert.match(chart, /appVersion: "0\.1\.0"/);
+  assert.equal(chartVersion, packageJson.version);
+  assert.equal(chartAppVersion, packageJson.version);
   assert.equal(chartValuesSchema.$schema, "http://json-schema.org/draft-07/schema#");
   assert.match(values, /name: agent-state-dashboard-supabase/);
   assert.match(values, /urlKey: SUPABASE_URL/);
