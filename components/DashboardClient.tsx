@@ -60,8 +60,11 @@ import {
   buildAgentRows,
   buildProjectSummaries,
   formatDuration,
+  liveEventDecision,
   normalizeSnapshot,
   statusLabel,
+  type DashboardLiveEvent,
+  type DashboardLiveState,
 } from "@/lib/dashboard-model";
 import type {
   AgentStatusFilter,
@@ -83,7 +86,6 @@ interface DashboardClientProps {
   legacyProjects: string[];
 }
 
-type LiveState = "connecting" | "live" | "reconnecting" | "stale";
 type DataSource = "snapshot" | "legacy";
 type SortKey = "attention" | "project" | "identity" | "duration" | "assigned" | "returned";
 type SortDirection = "asc" | "desc";
@@ -470,7 +472,7 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
   const [partialError, setPartialError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const [liveState, setLiveState] = useState<LiveState>("connecting");
+  const [liveState, setLiveState] = useState<DashboardLiveState>("connecting");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [query, setQuery] = useState("");
   const [projectFilter, setProjectFilter] = useState("all");
@@ -516,39 +518,24 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
   }, [legacyProjects, refreshToken]);
 
   useEffect(() => {
-    setLiveState("connecting");
+    const applyLiveEvent = (kind: DashboardLiveEvent, payload?: unknown) => {
+      const decision = liveEventDecision(kind, payload);
+      if (decision.state) setLiveState(decision.state);
+      if (decision.refresh) requestRefresh();
+    };
+
+    applyLiveEvent("open");
     const events = new EventSource("/events");
-    const markLive = () => setLiveState("live");
-    const refreshFromEvent = () => {
-      // Server refresh events are polling/initial fallback signals. They prove
-      // data can be refetched, not that Supabase Realtime is subscribed.
-      requestRefresh();
-    };
-    const invalidateFromEvent = () => {
-      // A Postgres invalidation proves Realtime traffic is flowing.
-      markLive();
-      requestRefresh();
-    };
+    const refreshFromEvent = () => applyLiveEvent("refresh");
+    const invalidateFromEvent = () => applyLiveEvent("invalidate");
     const handleStatus = (event: Event) => {
-      if (!(event instanceof MessageEvent)) return;
-      try {
-        const payload = JSON.parse(event.data) as { status?: unknown };
-        if (payload.status === "live") {
-          markLive();
-          return;
-        }
-        if (payload.status === "reconnecting" || payload.status === "starting") {
-          setLiveState(payload.status === "starting" ? "connecting" : "reconnecting");
-        }
-      } catch {
-        // Ignore malformed status events; data freshness still has polling protection.
-      }
+      if (event instanceof MessageEvent) applyLiveEvent("status", event.data);
     };
-    events.onopen = () => setLiveState("connecting");
+    events.onopen = () => applyLiveEvent("open");
     events.addEventListener("refresh", refreshFromEvent);
     events.addEventListener("invalidate", invalidateFromEvent);
     events.addEventListener("status", handleStatus);
-    events.onerror = () => setLiveState("reconnecting");
+    events.onerror = () => applyLiveEvent("error");
     const poll = window.setInterval(() => requestRefresh(), POLL_INTERVAL_MS);
     return () => {
       events.removeEventListener("refresh", refreshFromEvent);
@@ -563,7 +550,7 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
   const projects = useMemo(() => snapshot ? buildProjectSummaries(snapshot, rows) : [], [snapshot, rows]);
 
   const isStale = lastRefresh ? nowMs - lastRefresh.getTime() > STALE_AFTER_MS : liveState === "stale";
-  const effectiveLiveState: LiveState = isStale ? "stale" : liveState;
+  const effectiveLiveState: DashboardLiveState = isStale ? "stale" : liveState;
 
   const metrics = useMemo(() => ({
     projects: projects.length,
