@@ -39,10 +39,12 @@
     },
     "supabase": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["existingSecret"],
       "properties": {
         "existingSecret": {
           "type": "object",
+          "additionalProperties": false,
           "required": ["name", "urlKey", "secretKeyKey"],
           "properties": {
             "name": {"type": "string", "minLength": 1},
