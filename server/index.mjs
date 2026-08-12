@@ -88,18 +88,29 @@ export async function readTable(client, table, options = {}) {
   assertReadableTable(table);
   const limit = pageSize(options.pageSize);
   const rows = [];
+  let from = 0;
+  let totalRows = null;
 
-  for (let from = 0; ; from += limit) {
-    let query = client.from(table).select("*");
+  while (true) {
+    const tableQuery = client.from(table);
+    let query = totalRows === null
+      ? tableQuery.select("*", { count: "exact" })
+      : tableQuery.select("*");
     for (const column of TABLE_ORDER_COLUMNS[table]) {
       query = query.order(column, { ascending: true });
     }
     const result = await query.range(from, from + limit - 1);
     if (result.error) throw normalizeReadError(result.error);
 
+    if (totalRows === null && Number.isInteger(result.count) && result.count >= 0) {
+      totalRows = result.count;
+    }
     const currentPage = Array.isArray(result.data) ? result.data : [];
     rows.push(...currentPage);
-    if (currentPage.length < limit) return rows;
+
+    if (totalRows !== null && rows.length >= totalRows) return rows;
+    if (currentPage.length === 0) return rows;
+    from += currentPage.length;
   }
 }
 
