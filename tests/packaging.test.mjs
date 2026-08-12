@@ -112,14 +112,41 @@ test("Helm defaults use the exact existing Secret and Tailscale contract", () =>
   assert.match(service, /tailscale\.com\/proxy-group/);
 });
 
-test("Helm schema rejects unknown fields on declared runtime value objects", () => {
-  const image = chartValuesSchema.properties?.image;
-  const imagePullSecret = chartValuesSchema.properties?.imagePullSecrets?.items;
-  const serviceValues = chartValuesSchema.properties?.service;
-  const tailscale = chartValuesSchema.properties?.tailscale;
-  const supabase = chartValuesSchema.properties?.supabase;
+test("Helm schema models the complete public values surface and locks security invariants", () => {
+  const properties = chartValuesSchema.properties ?? {};
+  const image = properties.image;
+  const imagePullSecret = properties.imagePullSecrets?.items;
+  const serviceValues = properties.service;
+  const tailscale = properties.tailscale;
+  const supabase = properties.supabase;
   const existingSecret = supabase?.properties?.existingSecret;
+  const podSecurity = properties.podSecurityContext;
+  const containerSecurity = properties.securityContext;
 
+  assert.equal(chartValuesSchema.additionalProperties, false);
+  assert.deepEqual(
+    Object.keys(properties).sort(),
+    [
+      "affinity",
+      "fullnameOverride",
+      "image",
+      "imagePullSecrets",
+      "nameOverride",
+      "nodeSelector",
+      "podAnnotations",
+      "podLabels",
+      "podSecurityContext",
+      "probes",
+      "replicaCount",
+      "resources",
+      "securityContext",
+      "service",
+      "supabase",
+      "tailscale",
+      "terminationGracePeriodSeconds",
+      "tolerations",
+    ],
+  );
   assert.equal(image?.additionalProperties, false);
   assert.equal(imagePullSecret?.additionalProperties, false);
   assert.equal(serviceValues?.additionalProperties, false);
@@ -131,6 +158,15 @@ test("Helm schema rejects unknown fields on declared runtime value objects", () 
     Object.keys(existingSecret?.properties ?? {}).sort(),
     ["name", "secretKeyKey", "urlKey"],
   );
+  assert.equal(podSecurity?.properties?.runAsNonRoot?.const, true);
+  assert.equal(podSecurity?.properties?.runAsUser?.const, 1000);
+  assert.equal(podSecurity?.properties?.runAsGroup?.const, 1000);
+  assert.equal(podSecurity?.properties?.fsGroup?.const, 1000);
+  assert.equal(podSecurity?.properties?.seccompProfile?.properties?.type?.const, "RuntimeDefault");
+  assert.equal(containerSecurity?.properties?.allowPrivilegeEscalation?.const, false);
+  assert.equal(containerSecurity?.properties?.readOnlyRootFilesystem?.const, true);
+  assert.equal(containerSecurity?.properties?.runAsNonRoot?.const, true);
+  assert.equal(containerSecurity?.properties?.capabilities?.properties?.drop?.items?.const, "ALL");
 });
 
 test("Helm workload reads secrets by reference and has bounded probes/resources/security", () => {
