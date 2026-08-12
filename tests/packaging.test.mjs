@@ -16,6 +16,8 @@ const [
   releaseWorkflow,
   packageJsonSource,
   nodeVersionSource,
+  dockerIgnore,
+  gitIgnore,
 ] = await Promise.all([
   read("Dockerfile"),
   read("docker/entrypoint.sh"),
@@ -28,6 +30,8 @@ const [
   read(".github/workflows/release.yml"),
   read("package.json"),
   read(".nvmrc"),
+  read(".dockerignore"),
+  read(".gitignore"),
 ]);
 
 const packageJson = JSON.parse(packageJsonSource);
@@ -103,6 +107,13 @@ test("release is a thin exact-tag central workflow caller with no product runner
   assert.match(releaseWorkflow, /FORGEJO_REGISTRY_TOKEN/);
   assert.doesNotMatch(releaseWorkflow, /runs-on:/);
   assert.doesNotMatch(releaseWorkflow, /latest/);
+});
+
+test("retired Cloudflare secret scratch files stay out of Git and image contexts", () => {
+  for (const ignore of [gitIgnore, dockerIgnore]) {
+    assert.match(ignore, /^\.dev\.vars$/m);
+    assert.match(ignore, /^\.dev\.vars\.\*$/m);
+  }
 });
 
 test("package scripts no longer encode a Cloudflare Pages deployment path", () => {
