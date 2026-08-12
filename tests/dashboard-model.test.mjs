@@ -97,6 +97,13 @@ test("blocked is an overlay and can coexist with a returned chat", () => {
   assert.equal(model.attentionRank(row), 0);
 });
 
+test("blocked status variants used by current Agent State are recognized", () => {
+  assert.equal(model.isBlocked({ status: "blocked_on_external_ci_contract" }, []), true);
+  assert.equal(model.isBlocked({ phase: "blocked-review" }, []), true);
+  assert.equal(model.isBlocked({ status: "blocked: waiting for owner" }, []), true);
+  assert.equal(model.isBlocked({ status: "working" }, []), false);
+});
+
 test("duration stays live while working and freezes at return", () => {
   const assigned = "2026-08-12T00:00:00Z";
   const returned = "2026-08-12T00:05:30Z";
@@ -134,6 +141,33 @@ test("snapshot normalization accepts the five authority-table contract", () => {
   assert.equal(snapshot.work[0].workKey, "issue-6");
   assert.equal(snapshot.resources[0].resourceKey, "components/**");
   assert.equal(snapshot.coordination[0].recipient, "Orchestrator");
+});
+
+test("snapshot normalization preserves the full authoritative prompt and response text", () => {
+  const prompt = "  Keep leading space\nKeep trailing space  ";
+  const response = "\nLatest response with framing whitespace\n";
+  const snapshot = model.normalizeSnapshot({
+    current_projects: [],
+    current_agents: [{
+      project_key: "demo",
+      agent: "Agent 2",
+      prompt,
+      state: { status: "blocked_on_external_ci_contract" },
+      prompt_assigned_at: " 2026-08-12T00:00:00Z ",
+      last_response: response,
+      last_returned_at: null,
+    }],
+    current_work: [],
+    current_resources: [],
+    current_coordination: [],
+  });
+
+  assert.equal(snapshot.agents[0].prompt, prompt);
+  assert.equal(snapshot.agents[0].lastResponse, response);
+  assert.equal(snapshot.agents[0].promptAssignedAt, "2026-08-12T00:00:00Z");
+  const [row] = model.buildAgentRows(snapshot, Date.parse("2026-08-12T00:01:00Z"));
+  assert.equal(row.blocked, true);
+  assert.equal(model.statusLabel(row), "Blocked · working");
 });
 
 test("project summaries preserve returned attention counts and current project fields", () => {
