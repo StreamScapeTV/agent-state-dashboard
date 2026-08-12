@@ -46,6 +46,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   TableSortLabel,
   Tabs,
@@ -381,6 +382,8 @@ function RawTablesDialog({ open, onClose }: { open: boolean; onClose: () => void
   const [table, setTable] = useState<RawTableName>("current_projects");
   const [rows, setRows] = useState<unknown[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -391,6 +394,7 @@ function RawTablesDialog({ open, onClose }: { open: boolean; onClose: () => void
     setError(null);
     setRows([]);
     setSelectedIndex(0);
+    setPage(0);
     fetch(`/api/tables/${table}`, { cache: "no-store", signal: controller.signal })
       .then(readJson)
       .then((payload) => setRows(rawRows(payload, table)))
@@ -411,6 +415,11 @@ function RawTablesDialog({ open, onClose }: { open: boolean; onClose: () => void
     return [...names].slice(0, 8);
   }, [rows]);
 
+  const visibleRows = useMemo(
+    () => rows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
+    [rows, page, rowsPerPage],
+  );
+
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xl" fullWidth>
       <DialogTitle>Raw current-table explorer</DialogTitle>
@@ -421,37 +430,59 @@ function RawTablesDialog({ open, onClose }: { open: boolean; onClose: () => void
         {error && <Alert severity="error" sx={{ m: 2 }}>{error}</Alert>}
         {loading ? <Box sx={{ p: 5, display: "grid", placeItems: "center" }}><CircularProgress /></Box> : (
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1.5fr) minmax(320px, .5fr)" }, minHeight: 430 }}>
-            <TableContainer sx={{ maxHeight: 520, borderRight: { lg: "1px solid" }, borderColor: { lg: "divider" } }}>
-              <Table size="small" stickyHeader>
-                <TableHead><TableRow>{columns.map((column) => <TableCell key={column}>{column}</TableCell>)}</TableRow></TableHead>
-                <TableBody>
-                  {rows.map((row, index) => (
-                    <TableRow
-                      key={index}
-                      hover
-                      selected={selectedIndex === index}
-                      tabIndex={0}
-                      aria-selected={selectedIndex === index}
-                      onClick={() => setSelectedIndex(index)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          setSelectedIndex(index);
-                        }
-                      }}
-                      sx={{ cursor: "pointer" }}
-                    >
-                      {columns.map((column) => {
-                        const value = isRecord(row) ? row[column] : row;
-                        const text = cellText(value);
-                        return <TableCell key={column} sx={{ maxWidth: 240 }}><Tooltip title={text}><Typography variant="caption" noWrap>{text}</Typography></Tooltip></TableCell>;
-                      })}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {!error && rows.length === 0 && <Box sx={{ p: 5, textAlign: "center" }}><Typography color="text.secondary">This current table is empty.</Typography></Box>}
-            </TableContainer>
+            <Box sx={{ minWidth: 0, borderRight: { lg: "1px solid" }, borderColor: { lg: "divider" } }}>
+              <TableContainer sx={{ maxHeight: 460 }}>
+                <Table size="small" stickyHeader>
+                  <TableHead><TableRow>{columns.map((column) => <TableCell key={column}>{column}</TableCell>)}</TableRow></TableHead>
+                  <TableBody>
+                    {visibleRows.map((row, pageIndex) => {
+                      const index = page * rowsPerPage + pageIndex;
+                      return (
+                        <TableRow
+                          key={index}
+                          hover
+                          selected={selectedIndex === index}
+                          tabIndex={0}
+                          aria-selected={selectedIndex === index}
+                          onClick={() => setSelectedIndex(index)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelectedIndex(index);
+                            }
+                          }}
+                          sx={{ cursor: "pointer" }}
+                        >
+                          {columns.map((column) => {
+                            const value = isRecord(row) ? row[column] : row;
+                            const text = cellText(value);
+                            return <TableCell key={column} sx={{ maxWidth: 240 }}><Tooltip title={text}><Typography variant="caption" noWrap>{text}</Typography></Tooltip></TableCell>;
+                          })}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+                {!error && rows.length === 0 && <Box sx={{ p: 5, textAlign: "center" }}><Typography color="text.secondary">This current table is empty.</Typography></Box>}
+              </TableContainer>
+              <TablePagination
+                component="div"
+                count={rows.length}
+                page={page}
+                rowsPerPage={rowsPerPage}
+                rowsPerPageOptions={[25, 50, 100]}
+                onPageChange={(_, nextPage) => {
+                  setPage(nextPage);
+                  setSelectedIndex(nextPage * rowsPerPage);
+                }}
+                onRowsPerPageChange={(event) => {
+                  const nextRowsPerPage = Number.parseInt(event.target.value, 10);
+                  setRowsPerPage(nextRowsPerPage);
+                  setPage(0);
+                  setSelectedIndex(0);
+                }}
+              />
+            </Box>
             <Box sx={{ p: 2, minWidth: 0 }}>
               <Typography variant="overline" color="text.secondary">Selected row JSON</Typography>
               <JsonPanel value={rows[selectedIndex] ?? {}} maxHeight={460} />
@@ -553,6 +584,9 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
     () => selectedAgentKey ? rows.find((row) => row.key === selectedAgentKey) ?? null : null,
     [rows, selectedAgentKey],
   );
+  useEffect(() => {
+    if (selectedAgentKey && !baseRows.some((row) => row.key === selectedAgentKey)) setSelectedAgentKey(null);
+  }, [baseRows, selectedAgentKey]);
   const projects = useMemo(() => snapshot ? buildProjectSummaries(snapshot, baseRows) : [], [snapshot, baseRows]);
 
   const isStale = lastRefresh ? nowMs - lastRefresh.getTime() > STALE_AFTER_MS : liveState === "stale";
