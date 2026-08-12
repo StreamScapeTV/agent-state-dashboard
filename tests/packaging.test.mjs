@@ -85,7 +85,8 @@ test("static build identity rotates with the release version before immutable ca
   assert.doesNotMatch(nextConfigSource, /agent-state-dashboard-static/);
 });
 
-test("NGINX proxies local data routes and applies security headers at every header-owning scope", () => {
+test("NGINX proxies local data routes and applies bounded security/cache policy", () => {
+  assert.match(nginx, /^worker_processes 1;$/m);
   assert.match(nginx, /server 127\.0\.0\.1:8788/);
   assert.match(nginx, /location = \/healthz/);
   assert.match(nginx, /location \/api\//);
@@ -93,6 +94,7 @@ test("NGINX proxies local data routes and applies security headers at every head
   assert.match(nginx, /proxy_buffering off/);
   assert.match(nginx, /location \/_next\/static\//);
   assert.match(nginx, /immutable/);
+  assert.doesNotMatch(nginx, /^\s*expires\s/m);
   assert.match(nginx, /try_files \$uri \$uri\/ \$uri\.html \/index\.html/);
 
   const headerIncludes = nginx.match(/include \/etc\/nginx\/security-headers\.conf;/g);
@@ -104,7 +106,10 @@ test("NGINX proxies local data routes and applies security headers at every head
 });
 
 test("retired Cloudflare Pages headers cannot be copied back into the static export", async () => {
-  await assert.rejects(access(new URL("../public/_headers", import.meta.url)));
+  await assert.rejects(
+    access(new URL("../public/_headers", import.meta.url)),
+    (error) => error?.code === "ENOENT",
+  );
 });
 
 test("Helm defaults use the exact existing Secret and Tailscale contract", () => {
