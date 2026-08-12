@@ -42,6 +42,11 @@ function work(state = {}) {
 test("status derivation covers null, assigned, mid-work, returned, reassigned and idle", () => {
   assert.equal(model.deriveBaseStatus(agent(), []), "idle");
   assert.equal(
+    model.deriveBaseStatus(agent({ prompt: "Pre-observability retained prompt" }), []),
+    "idle",
+    "retained prompt text without an authoritative assignment timestamp must not fabricate working state",
+  );
+  assert.equal(
     model.deriveBaseStatus(agent({ promptAssignedAt: "2026-08-12T00:00:00Z" }), []),
     "working",
   );
