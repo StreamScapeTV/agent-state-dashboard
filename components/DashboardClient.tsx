@@ -509,14 +509,34 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
     let staleTimer: number | null = null;
     setLiveState("connecting");
     const events = new EventSource("/events");
-    events.onopen = () => {
+    const markLive = () => {
       if (staleTimer) window.clearTimeout(staleTimer);
+      staleTimer = null;
       setLiveState("live");
     };
-    events.onmessage = () => {
-      setLiveState("live");
+    const refreshFromEvent = () => {
+      markLive();
       requestRefresh();
     };
+    const handleStatus = (event: Event) => {
+      if (!(event instanceof MessageEvent)) return;
+      try {
+        const payload = JSON.parse(event.data) as { status?: unknown };
+        if (payload.status === "live") {
+          markLive();
+          return;
+        }
+        if (payload.status === "reconnecting" || payload.status === "starting") {
+          setLiveState(payload.status === "starting" ? "connecting" : "reconnecting");
+        }
+      } catch {
+        // Ignore malformed status events; connection/polling fallback still protects freshness.
+      }
+    };
+    events.onopen = markLive;
+    events.addEventListener("refresh", refreshFromEvent);
+    events.addEventListener("invalidate", refreshFromEvent);
+    events.addEventListener("status", handleStatus);
     events.onerror = () => {
       setLiveState("reconnecting");
       if (staleTimer) window.clearTimeout(staleTimer);
@@ -524,6 +544,9 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
     };
     const poll = window.setInterval(() => requestRefresh(), POLL_INTERVAL_MS);
     return () => {
+      events.removeEventListener("refresh", refreshFromEvent);
+      events.removeEventListener("invalidate", refreshFromEvent);
+      events.removeEventListener("status", handleStatus);
       events.close();
       window.clearInterval(poll);
       if (staleTimer) window.clearTimeout(staleTimer);
