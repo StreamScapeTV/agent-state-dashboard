@@ -301,10 +301,15 @@ export function buildAgentRows(snapshot: DashboardSnapshot, nowMs = Date.now()):
       work.map((item) => firstString(item.state, ["objective", "status", "summary", "title"])).find(Boolean) ??
       firstString(agent.state, ["objective", "status", "summary", "checkpoint"]) ??
       (work.length > 0 ? `${work.length} current work item${work.length === 1 ? "" : "s"}` : "No current work");
-    const nextAction =
-      firstString(agent.state, ["next_action", "nextAction", "next", "checkpoint"]) ??
-      work.map((item) => firstString(item.state, ["next_action", "nextAction", "next", "checkpoint"])).find(Boolean) ??
+    const explicitNextAction =
+      firstString(agent.state, ["next_action", "nextAction", "next"]) ??
+      work.map((item) => firstString(item.state, ["next_action", "nextAction", "next"])).find(Boolean) ??
       null;
+    const checkpoint =
+      firstString(agent.state, ["checkpoint"]) ??
+      work.map((item) => firstString(item.state, ["checkpoint"])).find(Boolean) ??
+      null;
+    const nextAction = explicitNextAction ?? checkpoint;
 
     return {
       ...agent,
