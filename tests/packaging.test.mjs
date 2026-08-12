@@ -136,10 +136,13 @@ test("release is a thin exact-tag central workflow caller with no product runner
   assert.doesNotMatch(releaseWorkflow, /latest/);
 });
 
-test("retired Cloudflare secret scratch files stay out of Git and image contexts", () => {
+test("local credential scratch files stay out of Git and image contexts", () => {
   for (const ignore of [gitIgnore, dockerIgnore]) {
+    assert.match(ignore, /^\.env$/m);
+    assert.match(ignore, /^\.env\.\*$/m);
     assert.match(ignore, /^\.dev\.vars$/m);
     assert.match(ignore, /^\.dev\.vars\.\*$/m);
+    assert.match(ignore, /^\.npmrc$/m);
   }
 });
 
