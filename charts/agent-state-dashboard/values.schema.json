@@ -6,6 +6,7 @@
     "replicaCount": {"type": "integer", "minimum": 1, "maximum": 5},
     "image": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["repository", "pullPolicy", "tag", "digest"],
       "properties": {
         "repository": {"type": "string", "minLength": 1},
@@ -18,17 +19,20 @@
       "type": "array",
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": ["name"],
         "properties": {"name": {"type": "string", "minLength": 1}}
       }
     },
     "service": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["port"],
       "properties": {"port": {"type": "integer", "minimum": 1, "maximum": 65535}}
     },
     "tailscale": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["enabled", "hostname", "tags", "proxyGroup"],
       "properties": {
         "enabled": {"type": "boolean"},
