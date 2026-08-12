@@ -105,9 +105,18 @@ test("Helm defaults use the exact existing Secret and Tailscale contract", () =>
   assert.match(service, /tailscale\.com\/proxy-group/);
 });
 
-test("Helm schema admits only existing-Secret Supabase references", () => {
+test("Helm schema rejects unknown fields on declared runtime value objects", () => {
+  const image = chartValuesSchema.properties?.image;
+  const imagePullSecret = chartValuesSchema.properties?.imagePullSecrets?.items;
+  const serviceValues = chartValuesSchema.properties?.service;
+  const tailscale = chartValuesSchema.properties?.tailscale;
   const supabase = chartValuesSchema.properties?.supabase;
   const existingSecret = supabase?.properties?.existingSecret;
+
+  assert.equal(image?.additionalProperties, false);
+  assert.equal(imagePullSecret?.additionalProperties, false);
+  assert.equal(serviceValues?.additionalProperties, false);
+  assert.equal(tailscale?.additionalProperties, false);
   assert.equal(supabase?.additionalProperties, false);
   assert.deepEqual(Object.keys(supabase?.properties ?? {}), ["existingSecret"]);
   assert.equal(existingSecret?.additionalProperties, false);
