@@ -187,6 +187,22 @@ test("project summaries preserve returned attention counts and current project f
   const [summary] = model.buildProjectSummaries(snapshot, rows);
   assert.equal(summary.returned, 1);
   assert.equal(summary.working, 1);
+  assert.equal(summary.total, 2);
   assert.equal(summary.phase, "validation");
+  assert.equal(summary.objective, "Ship console");
   assert.equal(summary.nextAction, "Merge");
+});
+
+test("client source contract keeps live invalidation, attention sorting and keyboard controls wired", () => {
+  const source = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /addEventListener\("invalidate", refreshFromEvent\)/);
+  assert.match(source, /addEventListener\("refresh", refreshFromEvent\)/);
+  assert.match(source, /addEventListener\("status", handleStatus\)/);
+  assert.match(source, /onClick=\{\(\) => sort\("attention"\)\}/);
+  assert.match(source, /<CardActionArea/);
+  assert.match(source, /aria-pressed=\{selected\}/);
+  assert.match(source, /aria-label="Clear filters"/);
+  assert.match(source, /event\.key === "Enter" \|\| event\.key === " "/);
+  assert.match(source, /Next: \{summary\.nextAction\}/);
 });
