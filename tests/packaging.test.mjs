@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -8,6 +8,7 @@ const [
   dockerfile,
   entrypoint,
   nginx,
+  securityHeaders,
   chart,
   values,
   valuesSchema,
@@ -23,6 +24,7 @@ const [
   read("Dockerfile"),
   read("docker/entrypoint.sh"),
   read("docker/nginx.conf"),
+  read("docker/security-headers.conf"),
   read("charts/agent-state-dashboard/Chart.yaml"),
   read("charts/agent-state-dashboard/values.yaml"),
   read("charts/agent-state-dashboard/values.schema.json"),
@@ -54,6 +56,7 @@ test("container packages static export behind NGINX and a loopback Node data pro
   assert.match(dockerfile, /cp -R server\/\. \/opt\/dashboard\/server\//);
   assert.doesNotMatch(dockerfile, /if \[ -d server \]/);
   assert.match(dockerfile, /COPY --from=build[^\n]*\/opt\/dashboard\/static/);
+  assert.match(dockerfile, /COPY docker\/security-headers\.conf \/etc\/nginx\/security-headers\.conf/);
   assert.match(dockerfile, /EXPOSE 8080/);
   assert.match(dockerfile, /HEALTHCHECK[^\n]*--interval=30s/);
   assert.match(dockerfile, /127\.0\.0\.1:8080\/healthz/);
@@ -82,7 +85,7 @@ test("static build identity rotates with the release version before immutable ca
   assert.doesNotMatch(nextConfigSource, /agent-state-dashboard-static/);
 });
 
-test("NGINX proxies only the local data routes and gives immutable static assets long caching", () => {
+test("NGINX proxies local data routes and applies security headers at every header-owning scope", () => {
   assert.match(nginx, /server 127\.0\.0\.1:8788/);
   assert.match(nginx, /location = \/healthz/);
   assert.match(nginx, /location \/api\//);
@@ -91,6 +94,17 @@ test("NGINX proxies only the local data routes and gives immutable static assets
   assert.match(nginx, /location \/_next\/static\//);
   assert.match(nginx, /immutable/);
   assert.match(nginx, /try_files \$uri \$uri\/ \$uri\.html \/index\.html/);
+
+  const headerIncludes = nginx.match(/include \/etc\/nginx\/security-headers\.conf;/g);
+  assert.equal(headerIncludes?.length, 4);
+  assert.match(securityHeaders, /X-Content-Type-Options "nosniff" always/);
+  assert.match(securityHeaders, /Referrer-Policy "no-referrer" always/);
+  assert.match(securityHeaders, /X-Frame-Options "DENY" always/);
+  assert.match(securityHeaders, /Permissions-Policy "camera=\(\), microphone=\(\), geolocation=\(\)" always/);
+});
+
+test("retired Cloudflare Pages headers cannot be copied back into the static export", async () => {
+  await assert.rejects(access(new URL("../public/_headers", import.meta.url)));
 });
 
 test("Helm defaults use the exact existing Secret and Tailscale contract", () => {
