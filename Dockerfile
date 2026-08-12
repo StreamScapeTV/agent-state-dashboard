@@ -10,9 +10,10 @@ RUN npm ci
 COPY . .
 RUN npm run build
 RUN set -eux; \
+    test -f server/index.mjs; \
     mkdir -p /opt/dashboard/static /opt/dashboard/server; \
     cp -R out/. /opt/dashboard/static/; \
-    if [ -d server ]; then cp -R server/. /opt/dashboard/server/; fi
+    cp -R server/. /opt/dashboard/server/
 
 FROM node:${NODE_VERSION}-alpine AS runtime
 RUN apk add --no-cache nginx tini
