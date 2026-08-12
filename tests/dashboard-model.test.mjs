@@ -287,7 +287,7 @@ test("project summaries preserve returned attention counts and current project f
   assert.equal(summary.nextAction, "Merge");
 });
 
-test("client source contract delegates live transitions, isolates duration ticks and keeps live details/accessibility wired", () => {
+test("client source contract delegates live transitions, isolates duration ticks and keeps live details/raw pagination/accessibility wired", () => {
   const source = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
 
   assert.match(source, /liveEventDecision\(kind, payload\)/);
@@ -300,7 +300,11 @@ test("client source contract delegates live transitions, isolates duration ticks
   assert.match(source, /refreshAgentDurations\(baseRows, nowMs\)/);
   assert.match(source, /const \[selectedAgentKey, setSelectedAgentKey\] = useState<string \| null>\(null\)/);
   assert.match(source, /rows\.find\(\(row\) => row\.key === selectedAgentKey\)/);
+  assert.match(source, /!baseRows\.some\(\(row\) => row\.key === selectedAgentKey\)\) setSelectedAgentKey\(null\)/);
   assert.match(source, /setSelectedAgentKey\(row\.key\)/);
+  assert.match(source, /rows\.slice\(page \* rowsPerPage, page \* rowsPerPage \+ rowsPerPage\)/);
+  assert.match(source, /<TablePagination/);
+  assert.match(source, /rowsPerPageOptions=\{\[25, 50, 100\]\}/);
   assert.match(source, /onClick=\{\(\) => sort\("attention"\)\}/);
   assert.match(source, /<CardActionArea/);
   assert.match(source, /aria-pressed=\{selected\}/);
