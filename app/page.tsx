@@ -1,4 +1,11 @@
-import { DashboardClient } from "@/components/DashboardClient";
+"use client";
+
+import dynamic from "next/dynamic";
+
+const DashboardClient = dynamic(
+  () => import("@/components/DashboardClient").then((module) => module.DashboardClient),
+  { ssr: false },
+);
 
 const LEGACY_PROJECTS = [
   "agent-state-dashboard",
