@@ -27,6 +27,7 @@ issues:
     blocked_by:
       - 23
       - 25
+      - 27
   19:
     blocked_by:
       - 5
@@ -36,4 +37,6 @@ issues:
   23:
     blocked_by: []
   25:
+    blocked_by: []
+  27:
     blocked_by: []
