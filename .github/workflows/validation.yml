@@ -24,7 +24,7 @@ concurrency:
 jobs:
   source:
     name: Admit exact dashboard source
-    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-resolve-source.yml@e8c7e9e3a756b5f35f0e4257dc5915e633926545
+    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-resolve-source.yml@29cb88e406a0490834bd556bb825d0e227c862ac
     with:
       source_mode: ${{ github.event_name == 'pull_request' && 'pr-head' || github.event_name == 'push' && 'push' || 'manual' }}
       requested_sha: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || '' }}
@@ -33,7 +33,7 @@ jobs:
   validate:
     name: CI / Node validation
     needs: source
-    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-node.yml@e8c7e9e3a756b5f35f0e4257dc5915e633926545
+    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-node.yml@29cb88e406a0490834bd556bb825d0e227c862ac
     with:
       admitted_sha: ${{ needs.source.outputs.source_sha }}
       validation_profile: frontend-contract-static
