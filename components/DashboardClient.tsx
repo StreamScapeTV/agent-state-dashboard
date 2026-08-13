@@ -149,7 +149,7 @@ function statusIcon(row: AgentViewRow) {
 }
 
 function pretty(value: unknown): string {
-  return JSON.stringify(value, null, 2);
+  return JSON.stringify(value, null, 2) ?? String(value);
 }
 
 function JsonPanel({ value, maxHeight = 320 }: { value: unknown; maxHeight?: number }) {
@@ -337,7 +337,7 @@ function cellText(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return JSON.stringify(value);
+  return JSON.stringify(value) ?? String(value);
 }
 
 function AgentDetailDialog({ row, onClose }: { row: AgentViewRow | null; onClose: () => void }) {
