@@ -24,10 +24,13 @@ issues:
       - 22
       - https://github.com/StreamScapeTV/ci-workflows/issues/111
   15:
-    blocked_by: []
+    blocked_by:
+      - 23
   19:
     blocked_by:
       - 5
       - 6
   22:
+    blocked_by: []
+  23:
     blocked_by: []
