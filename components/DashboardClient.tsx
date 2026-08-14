@@ -5,7 +5,6 @@ import {
   CheckCircleRounded,
   ContentCopyRounded,
   ErrorOutlineRounded,
-  GroupsRounded,
   HourglassTopRounded,
   PauseCircleRounded,
   SearchRounded,
@@ -17,7 +16,7 @@ import {
   Container, Dialog, DialogActions, DialogContent, DialogTitle, FormControl,
   IconButton, InputAdornment, InputLabel, LinearProgress, MenuItem, Paper, Select,
   Skeleton, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead,
-  TablePagination, TableRow, TableSortLabel, Tabs, TextField, Tooltip, Typography,
+  TablePagination, TableRow, TableSortLabel, Tabs, TextField, Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -26,14 +25,10 @@ import {
   type DashboardLiveEvent, type DashboardLiveState,
 } from "@/lib/dashboard-model";
 import type {
-  AgentStatusFilter, AgentViewRow, CurrentCoordinationRecord, CurrentProjectRecord,
-  CurrentResourceRecord, CurrentWorkRecord, DashboardSnapshot, IdentityKind, JsonValue,
-  LegacyActorsBatchPayload, LegacyOverviewPayload, ProjectSummary, RawTableName,
+  AgentStatusFilter, AgentViewRow, DashboardSnapshot, IdentityKind, ProjectSummary, RawTableName,
 } from "@/types/dashboard";
 import { RAW_TABLE_NAMES } from "@/types/dashboard";
 
-interface DashboardClientProps { legacyProjects: string[]; }
-type DataSource = "snapshot" | "legacy";
 type SortKey = "attention" | "project" | "identity" | "duration" | "assigned" | "returned";
 type SortDirection = "asc" | "desc";
 const POLL_INTERVAL_MS = 30_000;
@@ -41,12 +36,6 @@ const STALE_AFTER_MS = 75_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function asJson(value: unknown): JsonValue {
-  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
-  if (Array.isArray(value)) return value.map(asJson);
-  if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, asJson(item)]));
-  return String(value);
 }
 async function readJson(response: Response): Promise<unknown> {
   const body = await response.json();
@@ -77,55 +66,9 @@ function statusIcon(row: AgentViewRow) {
   return <PauseCircleRounded fontSize="small" />;
 }
 
-function parseLegacyWork(projectKey: string, identity: string, values: JsonValue[]): CurrentWorkRecord[] {
-  return values.map((state, index) => ({
-    projectKey, identity,
-    workKey: isRecord(state) ? String(state.work_key ?? state.workKey ?? `legacy-${index + 1}`) : `legacy-${index + 1}`,
-    state: isRecord(state) && "state" in state ? asJson(state.state) : state,
-  }));
-}
-function parseLegacyCoordination(projectKey: string, values: JsonValue[]): CurrentCoordinationRecord[] {
-  return values.flatMap((state) => {
-    if (!isRecord(state) || typeof state.sender !== "string" || typeof state.recipient !== "string") return [];
-    return [{ projectKey, sender: state.sender, recipient: state.recipient, state: "state" in state ? asJson(state.state) : asJson(state) }];
-  });
-}
-async function loadLegacySnapshot(projects: string[], signal: AbortSignal): Promise<DashboardSnapshot> {
-  const projectRows: CurrentProjectRecord[] = [];
-  const agents: DashboardSnapshot["agents"] = [];
-  const work: CurrentWorkRecord[] = [];
-  const resources: CurrentResourceRecord[] = [];
-  const coordination: CurrentCoordinationRecord[] = [];
-  const results = await Promise.allSettled(projects.map(async (projectKey) => {
-    const overview = await readJson(await fetch(`/api/overview?project=${encodeURIComponent(projectKey)}`, { cache: "no-store", signal })) as LegacyOverviewPayload;
-    const actors: LegacyActorsBatchPayload["actors"] = [];
-    for (let batch = 0; batch < overview.actorBatchCount; batch += 1) {
-      const payload = await readJson(await fetch(`/api/actors?project=${encodeURIComponent(projectKey)}&batch=${batch}`, { cache: "no-store", signal })) as LegacyActorsBatchPayload;
-      actors.push(...payload.actors);
-    }
-    return { overview, actors };
-  }));
-  results.forEach((result, index) => {
-    if (result.status !== "fulfilled") return;
-    const projectKey = projects[index];
-    projectRows.push({ projectKey, state: result.value.overview.projectState });
-    result.value.actors.forEach((actor) => {
-      agents.push({ projectKey, identity: actor.identity, prompt: actor.promptAssigned ? "Prompt content is unavailable through the compatibility endpoint." : null, state: actor.state, promptAssignedAt: null, lastResponse: null, lastReturnedAt: null });
-      work.push(...parseLegacyWork(projectKey, actor.identity, actor.work));
-      resources.push(...actor.resources.map((resourceKey) => ({ projectKey, identity: actor.identity, resourceKey })));
-      coordination.push(...parseLegacyCoordination(projectKey, actor.coordination));
-    });
-  });
-  if (projectRows.length === 0) throw new Error("Neither the snapshot API nor compatibility endpoints returned dashboard data.");
-  return { projects: projectRows, agents, work, resources, coordination, refreshedAt: new Date().toISOString(), missingTables: RAW_TABLE_NAMES };
-}
-async function loadSnapshot(legacyProjects: string[], signal: AbortSignal): Promise<{ snapshot: DashboardSnapshot; source: DataSource }> {
-  try {
-    return { snapshot: normalizeSnapshot(await readJson(await fetch("/api/snapshot", { cache: "no-store", signal }))), source: "snapshot" };
-  } catch (error) {
-    if (signal.aborted) throw error;
-    return { snapshot: await loadLegacySnapshot(legacyProjects, signal), source: "legacy" };
-  }
+async function loadSnapshot(signal: AbortSignal): Promise<DashboardSnapshot> {
+  const response = await fetch("/api/snapshot", { cache: "no-store", signal });
+  return normalizeSnapshot(await readJson(response));
 }
 
 function JsonPanel({ value }: { value: unknown }) {
@@ -174,9 +117,8 @@ function AgentTable({ rows, sortKey, sortDirection, sort, onView }: AgentTablePr
   return <TableContainer sx={{ maxHeight: "calc(100vh - 390px)", minHeight: 300 }}><Table size="small" stickyHeader><TableHead><TableRow><TableCell><TableSortLabel active={sortKey === "project"} direction={dir("project")} onClick={() => sort("project")}>Project</TableSortLabel></TableCell><TableCell><TableSortLabel active={sortKey === "identity"} direction={dir("identity")} onClick={() => sort("identity")}>Identity</TableSortLabel></TableCell><TableCell><TableSortLabel active={sortKey === "attention"} direction={dir("attention")} onClick={() => sort("attention")}>Status</TableSortLabel></TableCell><TableCell>Current work / next action</TableCell><TableCell>Assigned</TableCell><TableCell>Returned</TableCell><TableCell><TableSortLabel active={sortKey === "duration"} direction={dir("duration")} onClick={() => sort("duration")}>Duration</TableSortLabel></TableCell><TableCell /></TableRow></TableHead><TableBody>{rows.map((row) => <TableRow key={row.key} hover><TableCell>{row.projectKey}</TableCell><TableCell><Typography sx={{ fontWeight: 700 }}>{row.identity}</Typography><Typography variant="caption">{row.identityKind}</Typography></TableCell><TableCell><Chip size="small" icon={statusIcon(row)} label={statusLabel(row)} color={statusColor(row)} /></TableCell><TableCell><Typography noWrap>{row.workSummary}</Typography>{row.nextAction ? <Typography variant="caption" noWrap>Next: {row.nextAction}</Typography> : null}</TableCell><TableCell>{shortTime(row.promptAssignedAt)}</TableCell><TableCell>{shortTime(row.lastReturnedAt)}</TableCell><TableCell>{formatDuration(row.durationMs)}</TableCell><TableCell><Button size="small" startIcon={<VisibilityRounded />} onClick={() => onView(row.key)}>View</Button></TableCell></TableRow>)}</TableBody></Table></TableContainer>;
 }
 
-export function DashboardClient({ legacyProjects }: DashboardClientProps) {
+export function DashboardClient() {
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
-  const [source, setSource] = useState<DataSource>("snapshot");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -200,9 +142,9 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
     const controller = new AbortController();
     if (loaded.current) setRefreshing(true); else setLoading(true);
     setError(null);
-    loadSnapshot(legacyProjects, controller.signal).then(({ snapshot: value, source: dataSource }) => { setSnapshot(value); setSource(dataSource); setLastRefresh(new Date()); loaded.current = true; }).catch((caught) => { if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : "Dashboard data could not be loaded."); }).finally(() => { if (!controller.signal.aborted) { setLoading(false); setRefreshing(false); } });
+    loadSnapshot(controller.signal).then((value) => { setSnapshot(value); setLastRefresh(new Date()); loaded.current = true; }).catch((caught) => { if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : "Dashboard snapshot could not be loaded."); }).finally(() => { if (!controller.signal.aborted) { setLoading(false); setRefreshing(false); } });
     return () => controller.abort();
-  }, [legacyProjects, refreshToken]);
+  }, [refreshToken]);
   useEffect(() => {
     const applyLiveEvent = (kind: DashboardLiveEvent, payload?: unknown) => { const decision = liveEventDecision(kind, payload); if (decision.state) setLiveState(decision.state); if (decision.refresh) requestRefresh(); };
     const events = new EventSource("/events");
@@ -231,5 +173,5 @@ export function DashboardClient({ legacyProjects }: DashboardClientProps) {
   const clearFilters = () => { setQuery(""); setProjectFilter("all"); setIdentityFilter("all"); setStatusFilter("all"); };
   const effectiveLiveState: DashboardLiveState = lastRefresh && nowMs - lastRefresh.getTime() > STALE_AFTER_MS ? "stale" : liveState;
 
-  return <Container maxWidth={false} sx={{ py: 2 }}><Stack direction={{ xs: "column", md: "row" }} sx={{ justifyContent: "space-between", gap: 2, mb: 2 }}><Box><Typography variant="overline">STREAMSCAPETV · AGENT STATE</Typography><Typography variant="h4">Operations console</Typography></Box><Stack direction="row" spacing={1}><Chip label={`${effectiveLiveState}${lastRefresh ? ` · ${shortTime(lastRefresh.toISOString())}` : ""}`} /><Button startIcon={refreshing ? <CircularProgress size={16} /> : <AutorenewRounded />} onClick={requestRefresh}>Refresh</Button><Button startIcon={<StorageRounded />} onClick={() => setRawOpen(true)}>Raw tables</Button></Stack></Stack>{source === "legacy" ? <Alert severity="warning" sx={{ mb: 2 }}>Compatibility data is in use.</Alert> : null}{error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}{refreshing ? <LinearProgress sx={{ mb: 2 }} /> : null}<Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2,1fr)", md: "repeat(4,1fr)" }, gap: 1, mb: 2 }}>{loading && !snapshot ? <Skeleton height={100} /> : <><Paper sx={{ p: 1 }}><Typography>Agents {rows.length}</Typography></Paper><Paper sx={{ p: 1 }}><Typography>Working {rows.filter((row) => row.baseStatus === "working").length}</Typography></Paper><Paper sx={{ p: 1 }}><Typography>Returned {rows.filter((row) => row.baseStatus === "returned").length}</Typography></Paper><Paper sx={{ p: 1 }}><Typography>Blocked {rows.filter((row) => row.blocked).length}</Typography></Paper></>}</Box><ProjectCards projects={projects} selected={projectFilter} onSelect={setProjectFilter} /><Paper variant="outlined"><Stack direction={{ xs: "column", lg: "row" }} sx={{ gap: 1, p: 1 }}><TextField size="small" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search…" slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} /><FormControl size="small"><InputLabel>Project</InputLabel><Select value={projectFilter} label="Project" onChange={(event) => setProjectFilter(String(event.target.value))}><MenuItem value="all">All projects</MenuItem>{projects.map((project) => <MenuItem key={project.projectKey} value={project.projectKey}>{project.projectKey}</MenuItem>)}</Select></FormControl><FormControl size="small"><InputLabel>Identity</InputLabel><Select value={identityFilter} label="Identity" onChange={(event) => setIdentityFilter(event.target.value as IdentityKind | "all")}><MenuItem value="all">All identities</MenuItem><MenuItem value="agent">Agent N</MenuItem><MenuItem value="codex">Codex N</MenuItem><MenuItem value="orchestrator">Orchestrator</MenuItem><MenuItem value="dependabot">Dependabot</MenuItem><MenuItem value="other">Other</MenuItem></Select></FormControl><FormControl size="small"><InputLabel>Status</InputLabel><Select value={statusFilter} label="Status" onChange={(event) => setStatusFilter(event.target.value as AgentStatusFilter)}><MenuItem value="all">All statuses</MenuItem><MenuItem value="working">Working</MenuItem><MenuItem value="returned">Returned</MenuItem><MenuItem value="blocked">Blocked</MenuItem><MenuItem value="idle">Idle</MenuItem></Select></FormControl><IconButton aria-label="Clear filters" onClick={clearFilters}><SearchRounded /></IconButton></Stack><AgentTable rows={filteredRows} sortKey={sortKey} sortDirection={sortDirection} sort={sort} onView={setSelectedAgentKey} /></Paper><AgentDetailDialog row={selectedAgent} onClose={() => setSelectedAgentKey(null)} /><RawTablesDialog open={rawOpen} onClose={() => setRawOpen(false)} /></Container>;
+  return <Container maxWidth={false} sx={{ py: 2 }}><Stack direction={{ xs: "column", md: "row" }} sx={{ justifyContent: "space-between", gap: 2, mb: 2 }}><Box><Typography variant="overline">STREAMSCAPETV · AGENT STATE</Typography><Typography variant="h4">Operations console</Typography></Box><Stack direction="row" spacing={1}><Chip label={`${effectiveLiveState}${lastRefresh ? ` · ${shortTime(lastRefresh.toISOString())}` : ""}`} /><Button startIcon={refreshing ? <CircularProgress size={16} /> : <AutorenewRounded />} onClick={requestRefresh}>Refresh</Button><Button startIcon={<StorageRounded />} onClick={() => setRawOpen(true)}>Raw tables</Button></Stack></Stack>{error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}{refreshing ? <LinearProgress sx={{ mb: 2 }} /> : null}<Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2,1fr)", md: "repeat(4,1fr)" }, gap: 1, mb: 2 }}>{loading && !snapshot ? <Skeleton height={100} /> : <><Paper sx={{ p: 1 }}><Typography>Agents {rows.length}</Typography></Paper><Paper sx={{ p: 1 }}><Typography>Working {rows.filter((row) => row.baseStatus === "working").length}</Typography></Paper><Paper sx={{ p: 1 }}><Typography>Returned {rows.filter((row) => row.baseStatus === "returned").length}</Typography></Paper><Paper sx={{ p: 1 }}><Typography>Blocked {rows.filter((row) => row.blocked).length}</Typography></Paper></>}</Box><ProjectCards projects={projects} selected={projectFilter} onSelect={setProjectFilter} /><Paper variant="outlined"><Stack direction={{ xs: "column", lg: "row" }} sx={{ gap: 1, p: 1 }}><TextField size="small" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search…" slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }} /><FormControl size="small"><InputLabel>Project</InputLabel><Select value={projectFilter} label="Project" onChange={(event) => setProjectFilter(String(event.target.value))}><MenuItem value="all">All projects</MenuItem>{projects.map((project) => <MenuItem key={project.projectKey} value={project.projectKey}>{project.projectKey}</MenuItem>)}</Select></FormControl><FormControl size="small"><InputLabel>Identity</InputLabel><Select value={identityFilter} label="Identity" onChange={(event) => setIdentityFilter(event.target.value as IdentityKind | "all")}><MenuItem value="all">All identities</MenuItem><MenuItem value="agent">Agent N</MenuItem><MenuItem value="codex">Codex N</MenuItem><MenuItem value="orchestrator">Orchestrator</MenuItem><MenuItem value="dependabot">Dependabot</MenuItem><MenuItem value="other">Other</MenuItem></Select></FormControl><FormControl size="small"><InputLabel>Status</InputLabel><Select value={statusFilter} label="Status" onChange={(event) => setStatusFilter(event.target.value as AgentStatusFilter)}><MenuItem value="all">All statuses</MenuItem><MenuItem value="working">Working</MenuItem><MenuItem value="returned">Returned</MenuItem><MenuItem value="blocked">Blocked</MenuItem><MenuItem value="idle">Idle</MenuItem></Select></FormControl><IconButton aria-label="Clear filters" onClick={clearFilters}><SearchRounded /></IconButton></Stack><AgentTable rows={filteredRows} sortKey={sortKey} sortDirection={sortDirection} sort={sort} onView={setSelectedAgentKey} /></Paper><AgentDetailDialog row={selectedAgent} onClose={() => setSelectedAgentKey(null)} /><RawTablesDialog open={rawOpen} onClose={() => setRawOpen(false)} /></Container>;
 }
