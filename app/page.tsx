@@ -1,6 +1,7 @@
 import { DashboardClient } from "@/components/DashboardClient";
 
-const PROJECTS = [
+const LEGACY_PROJECTS = [
+  "agent-state-dashboard",
   "agent-state-supabase",
   "ci-workflows",
   "iptv-backend",
@@ -12,10 +13,5 @@ const PROJECTS = [
 ];
 
 export default function Home() {
-  return (
-    <DashboardClient
-      projects={PROJECTS}
-      viewer={{ email: "Cloudflare Access SSO", subject: "cloudflare-access" }}
-    />
-  );
+  return <DashboardClient legacyProjects={LEGACY_PROJECTS} />;
 }
