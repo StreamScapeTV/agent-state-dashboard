@@ -90,30 +90,3 @@ export interface ProjectSummary {
   objective: string | null;
   nextAction: string | null;
 }
-
-export interface LegacyActorSnapshot {
-  identity: string;
-  status: string;
-  promptAssigned: boolean;
-  promptLength: number;
-  state: JsonValue;
-  work: JsonValue[];
-  resources: string[];
-  coordination: JsonValue[];
-}
-
-export interface LegacyOverviewPayload {
-  project: string;
-  projectState: JsonValue;
-  storageBudget: JsonValue;
-  actorBatchCount: number;
-  actorCapacity: number;
-  scannedAt: string;
-}
-
-export interface LegacyActorsBatchPayload {
-  project: string;
-  batch: number;
-  actors: LegacyActorSnapshot[];
-  scannedIdentities: number;
-}
