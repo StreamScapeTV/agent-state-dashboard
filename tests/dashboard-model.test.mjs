@@ -301,13 +301,14 @@ test("client source contract delegates live transitions, isolates duration ticks
   assert.match(source, /const \[selectedAgentKey, setSelectedAgentKey\] = useState<string \| null>\(null\)/);
   assert.match(source, /rows\.find\(\(row\) => row\.key === selectedAgentKey\)/);
   assert.match(source, /!baseRows\.some\(\(row\) => row\.key === selectedAgentKey\)\) setSelectedAgentKey\(null\)/);
-  assert.match(source, /setSelectedAgentKey\(row\.key\)/);
+  assert.match(source, /onClick=\{\(\) => onView\(row\.key\)\}/);
+  assert.match(source, /onView=\{setSelectedAgentKey\}/);
   assert.match(source, /rows\.slice\(page \* rowsPerPage, page \* rowsPerPage \+ rowsPerPage\)/);
   assert.match(source, /<TablePagination/);
   assert.match(source, /rowsPerPageOptions=\{\[25, 50, 100\]\}/);
   assert.match(source, /onClick=\{\(\) => sort\("attention"\)\}/);
   assert.match(source, /<CardActionArea/);
-  assert.match(source, /aria-pressed=\{selected\}/);
+  assert.match(source, /aria-pressed=\{active\}/);
   assert.match(source, /aria-label="Clear filters"/);
   assert.match(source, /event\.key === "Enter" \|\| event\.key === " "/);
   assert.match(source, /Next: \{summary\.nextAction\}/);
