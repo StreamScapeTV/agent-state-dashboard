@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   release:
-    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-tag-image-chart.yml@main
+    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-tag-image-chart.yml@85b86d260d3212ec1c86433439df598864aa461f
     with:
       image_name: agent-state-dashboard
       chart_name: agent-state-dashboard
