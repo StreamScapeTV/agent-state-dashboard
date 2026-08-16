@@ -73,6 +73,8 @@ test("container builds with Node but runs only pinned NGINX", () => {
 
   assert.match(entrypoint, /SUPABASE_URL must be supplied by the Kubernetes Secret/);
   assert.match(entrypoint, /SUPABASE_SECRET_KEY must be supplied by the Kubernetes Secret/);
+  assert.match(entrypoint, /\^https\?\:\/\//);
+  assert.match(entrypoint, /A-Za-z0-9\._-/);
   assert.match(entrypoint, /SUPABASE_URL="\$\{SUPABASE_URL%\/\}"/);
   assert.match(entrypoint, /envsubst '\$\{SUPABASE_URL\} \$\{SUPABASE_SECRET_KEY\}'/);
   assert.match(entrypoint, /\/tmp\/nginx\.conf/);
@@ -95,25 +97,36 @@ test("static build identity rotates with the release version before immutable ca
   assert.doesNotMatch(nextConfigSource, /agent-state-dashboard-static/);
 });
 
-test("NGINX exposes only the read-only same-origin Supabase gateway plus static UI", () => {
+test("NGINX exposes only the five-table read gateway plus Realtime and static UI", () => {
   assert.match(nginx, /^worker_processes 1;$/m);
   assert.match(nginx, /location = \/healthz/);
   assert.match(nginx, /return 200 "ok\\n"/);
   assert.doesNotMatch(nginx, /dashboard_server|127\.0\.0\.1:8788|location \/api\/|location = \/events/);
 
-  assert.match(nginx, /location \^~ \/supabase\/rest\/v1\//);
+  assert.match(nginx, /proxy_ssl_verify on/);
+  assert.match(nginx, /proxy_ssl_trusted_certificate \/etc\/ssl\/certs\/ca-certificates\.crt/);
+  assert.match(
+    nginx,
+    /location ~ \^\/supabase\/rest\/v1\/\(current_projects\|current_agents\|current_work\|current_resources\|current_coordination\)\/\?\$/,
+  );
   assert.match(nginx, /\$request_method !~ \^\(GET\|HEAD\|OPTIONS\)\$/);
-  assert.match(nginx, /return 405/);
+  assert.match(nginx, /if \(\$arg_apikey != ''\)/);
+  assert.match(nginx, /rewrite \^\/supabase\/rest\/v1\/\(current_projects\|current_agents\|current_work\|current_resources\|current_coordination\)\/\?\$ \/rest\/v1\/\$1 break/);
   assert.match(nginx, /proxy_set_header apikey "\$\{SUPABASE_SECRET_KEY\}"/);
   assert.match(nginx, /proxy_set_header Authorization ""/);
-  assert.match(nginx, /proxy_pass \$\{SUPABASE_URL\}\/rest\/v1\//);
-  assert.match(nginx, /proxy_ssl_server_name on/);
+  assert.match(nginx, /proxy_set_header X-HTTP-Method-Override ""/);
+  assert.match(nginx, /proxy_pass \$\{SUPABASE_URL\};/);
+  assert.match(nginx, /location = \/supabase\/rest\/v1 \{\s*return 404;/);
+  assert.match(nginx, /location \/supabase\/rest\/v1\/ \{\s*return 404;/);
 
   assert.match(nginx, /map \$http_upgrade \$connection_upgrade/);
   assert.match(nginx, /map \$arg_vsn \$realtime_vsn/);
-  assert.match(nginx, /default "&vsn=\$arg_vsn"/);
+  assert.match(nginx, /'1\.0\.0' '&vsn=1\.0\.0'/);
+  assert.match(nginx, /'2\.0\.0' '&vsn=2\.0\.0'/);
   assert.match(nginx, /map \$arg_log_level \$realtime_log_level/);
-  assert.match(nginx, /default "&log_level=\$arg_log_level"/);
+  assert.match(nginx, /'info' '&log_level=info'/);
+  assert.match(nginx, /'warn' '&log_level=warn'/);
+  assert.match(nginx, /'error' '&log_level=error'/);
   assert.match(nginx, /location = \/supabase\/realtime\/v1\/websocket/);
   assert.match(
     nginx,
@@ -126,6 +139,9 @@ test("NGINX exposes only the read-only same-origin Supabase gateway plus static 
   assert.match(nginx, /proxy_read_timeout 1h/);
   assert.match(nginx, /proxy_send_timeout 1h/);
   assert.match(nginx, /proxy_pass \$\{SUPABASE_URL\}\/realtime\/v1\/websocket/);
+
+  assert.equal((nginx.match(/proxy_set_header User-Agent "StreamScapeTV-Agent-State-Dashboard-Gateway\/1"/g) ?? []).length, 2);
+  assert.equal((nginx.match(/error_log \/dev\/null emerg;/g) ?? []).length, 2);
   assert.equal((nginx.match(/access_log off;/g) ?? []).length, 3);
 
   assert.match(nginx, /location \/_next\/static\//);
