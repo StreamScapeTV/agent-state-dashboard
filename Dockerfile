@@ -21,9 +21,18 @@ COPY docker/nginx.conf /etc/nginx/templates/nginx.conf.template
 COPY docker/security-headers.conf /etc/nginx/security-headers.conf
 COPY docker/entrypoint.sh /usr/local/bin/agent-state-dashboard-entrypoint
 
-RUN rm -f /etc/nginx/conf.d/default.conf \
-    && chmod 0555 /usr/local/bin/agent-state-dashboard-entrypoint \
-    && chmod -R a+rX /usr/share/nginx/html /etc/nginx/templates /etc/nginx/security-headers.conf
+RUN set -eux; \
+    rm -f /etc/nginx/conf.d/default.conf; \
+    chmod 0555 /usr/local/bin/agent-state-dashboard-entrypoint; \
+    chmod -R a+rX /usr/share/nginx/html /etc/nginx/templates /etc/nginx/security-headers.conf; \
+    command -v envsubst; \
+    mkdir -p /tmp/nginx/client_temp /tmp/nginx/proxy_temp /tmp/nginx/fastcgi_temp /tmp/nginx/uwsgi_temp /tmp/nginx/scgi_temp; \
+    SUPABASE_URL=https://localhost SUPABASE_SECRET_KEY=sb_secret_build_check \
+      envsubst '${SUPABASE_URL} ${SUPABASE_SECRET_KEY}' \
+      < /etc/nginx/templates/nginx.conf.template \
+      > /tmp/nginx-build-check.conf; \
+    nginx -t -c /tmp/nginx-build-check.conf; \
+    rm -f /tmp/nginx-build-check.conf
 
 USER 101
 EXPOSE 8080
