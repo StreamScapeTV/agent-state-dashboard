@@ -21,7 +21,7 @@ test("browser Supabase client is same-origin and uses only a non-secret API-key-
   assert.match(clientSource, /DASHBOARD_PLACEHOLDER_KEY = "sb_publishable_dashboard_proxy_placeholder"/);
   assert.doesNotMatch(clientSource, /DASHBOARD_PLACEHOLDER_KEY = "sb_secret_/);
   assert.match(clientSource, /dashboardProxyUrl\(window\.location\.origin\)/);
-  assert.match(clientSource, /createClient\([\s\S]*DASHBOARD_PLACEHOLDER_KEY/);
+  assert.match(clientSource, /createClient<any, typeof AGENT_STATE_SCHEMA>\([\s\S]*DASHBOARD_PLACEHOLDER_KEY/);
   assert.match(clientSource, /db: \{ schema: AGENT_STATE_SCHEMA \}/);
   assert.doesNotMatch(browserSources, /SUPABASE_URL|SUPABASE_SECRET_KEY|NEXT_PUBLIC_SUPABASE/i);
   assert.doesNotMatch(browserSources, /https?:\/\/[^"'\s]*\.supabase\.(?:co|in)/i);
