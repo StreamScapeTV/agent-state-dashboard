@@ -35,20 +35,26 @@ interface ReadTableOptions {
   signal?: AbortSignal;
 }
 
-let browserClient: SupabaseClient | null = null;
+type DashboardSupabaseClient = SupabaseClient<
+  any,
+  typeof AGENT_STATE_SCHEMA,
+  typeof AGENT_STATE_SCHEMA
+>;
+
+let browserClient: DashboardSupabaseClient | null = null;
 
 export function dashboardProxyUrl(origin: string): string {
   const normalizedOrigin = origin.endsWith("/") ? origin : `${origin}/`;
   return new URL(DASHBOARD_PROXY_PATH.slice(1), normalizedOrigin).toString().replace(/\/$/, "");
 }
 
-export function getDashboardSupabaseClient(): SupabaseClient {
+export function getDashboardSupabaseClient(): DashboardSupabaseClient {
   if (browserClient) return browserClient;
   if (typeof window === "undefined") {
     throw new Error("Dashboard Supabase client is browser-only");
   }
 
-  browserClient = createClient(
+  browserClient = createClient<any, typeof AGENT_STATE_SCHEMA>(
     dashboardProxyUrl(window.location.origin),
     DASHBOARD_PLACEHOLDER_KEY,
     {
@@ -75,7 +81,7 @@ function pageSize(value: number | undefined): number {
 }
 
 export async function readDashboardTable(
-  client: SupabaseClient,
+  client: DashboardSupabaseClient,
   table: RawTableName,
   options: ReadTableOptions = {},
 ): Promise<unknown[]> {
@@ -111,7 +117,7 @@ export async function readDashboardTable(
 }
 
 export async function readDashboardSnapshot(
-  client: SupabaseClient,
+  client: DashboardSupabaseClient,
   options: Pick<ReadTableOptions, "signal"> = {},
 ): Promise<DashboardRawSnapshot> {
   const entries = await Promise.all(
@@ -128,7 +134,7 @@ export async function readDashboardSnapshot(
 }
 
 export function subscribeToDashboardChanges(
-  client: SupabaseClient,
+  client: DashboardSupabaseClient,
   handlers: DashboardRealtimeHandlers,
 ): () => void {
   let active = true;
