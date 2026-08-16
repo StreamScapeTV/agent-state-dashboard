@@ -43,6 +43,7 @@ const chartValuesSchema = JSON.parse(valuesSchema);
 const nodeVersion = nodeVersionSource.trim();
 const chartVersion = chart.match(/^version:\s*([^\s]+)$/m)?.[1];
 const chartAppVersion = chart.match(/^appVersion:\s*["']?([^"'\s]+)["']?$/m)?.[1];
+const publisherSha = "85b86d260d3212ec1c86433439df598864aa461f";
 
 test("container packages static export behind NGINX and a loopback Node data process", () => {
   assert.match(dockerfile, new RegExp(`ARG NODE_VERSION=${nodeVersion.replaceAll(".", "\\.")}`));
@@ -206,7 +207,8 @@ test("release is a thin bounded exact-tag central workflow caller", () => {
   assert.match(releaseWorkflow, /run-name: Publish tagged dashboard release \$\{\{ github\.ref_name \}\}/);
   assert.match(releaseWorkflow, /group: agent-state-dashboard-release-\$\{\{ github\.ref_name \}\}/);
   assert.match(releaseWorkflow, /cancel-in-progress: false/);
-  assert.match(releaseWorkflow, /reusable-tag-image-chart\.yml@main/);
+  assert.match(releaseWorkflow, new RegExp(`reusable-tag-image-chart\\.yml@${publisherSha}`));
+  assert.doesNotMatch(releaseWorkflow, /reusable-tag-image-chart\.yml@main/);
   assert.match(releaseWorkflow, /image_name: agent-state-dashboard/);
   assert.match(releaseWorkflow, /chart_path: charts\/agent-state-dashboard/);
   assert.match(releaseWorkflow, /FORGEJO_REGISTRY_USERNAME/);
