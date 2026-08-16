@@ -4,13 +4,19 @@ set -eu
 : "${SUPABASE_URL:?SUPABASE_URL must be supplied by the Kubernetes Secret}"
 : "${SUPABASE_SECRET_KEY:?SUPABASE_SECRET_KEY must be supplied by the Kubernetes Secret}"
 
-case "${SUPABASE_URL}" in
-  http://*|https://*) ;;
-  *)
-    echo "SUPABASE_URL must be an absolute HTTP(S) URL" >&2
-    exit 64
-    ;;
-esac
+# The values are substituted into an NGINX configuration, so validate their
+# complete grammar rather than attempting to escape arbitrary configuration
+# syntax. Hosted Supabase URLs are origins; local/self-hosted development may
+# additionally use an explicit port. Both current sb_secret_* and legacy
+# service_role JWT keys fit the bounded API-key character set below.
+if ! printf '%s\n' "${SUPABASE_URL}" | grep -Eq '^https?://[A-Za-z0-9.-]+(:[0-9]+)?/?$'; then
+  echo "SUPABASE_URL must be an HTTP(S) origin without a path, query, fragment, or credentials" >&2
+  exit 64
+fi
+if ! printf '%s\n' "${SUPABASE_SECRET_KEY}" | grep -Eq '^[A-Za-z0-9._-]+$'; then
+  echo "SUPABASE_SECRET_KEY has an unsupported format" >&2
+  exit 64
+fi
 
 SUPABASE_URL="${SUPABASE_URL%/}"
 export SUPABASE_URL SUPABASE_SECRET_KEY
