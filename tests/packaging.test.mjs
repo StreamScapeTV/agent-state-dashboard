@@ -199,7 +199,8 @@ test("Helm workload reads secrets by reference and has bounded probes/resources/
   assert.match(deployment, /resources:/);
   assert.match(deployment, /automountServiceAccountToken: false/);
   assert.match(deployment, /imagePullSecrets:/);
-  assert.match(deployment, /readOnlyRootFilesystem: true/);
+  assert.match(deployment, /toYaml \.Values\.securityContext/);
+  assert.match(values, /readOnlyRootFilesystem: true/);
   assert.doesNotMatch(deployment, /value:\s*['"]?https?:\/\/[^\s]+supabase/);
 });
 
