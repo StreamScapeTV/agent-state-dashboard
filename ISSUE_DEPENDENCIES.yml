@@ -24,6 +24,7 @@ issues:
       - 22
       - 31
       - 32
+      - 33
       - https://github.com/StreamScapeTV/ci-workflows/issues/111
       - https://github.com/StreamScapeTV/ci-workflows/issues/266
   15:
@@ -47,3 +48,7 @@ issues:
     blocked_by: []
   32:
     blocked_by: []
+  33:
+    blocked_by:
+      - 31
+      - https://github.com/StreamScapeTV/ci-workflows/issues/266
