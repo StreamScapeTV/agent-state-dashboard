@@ -50,14 +50,6 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.supabase.existingSecret.name | quote }}
                   key: {{ .Values.supabase.existingSecret.secretKeyKey | quote }}
-            - name: SERVER_HOST
-              value: "127.0.0.1"
-            - name: SERVER_PORT
-              value: "8788"
-            - name: HOST
-              value: "127.0.0.1"
-            - name: PORT
-              value: "8788"
           ports:
             - name: http
               containerPort: 8080
