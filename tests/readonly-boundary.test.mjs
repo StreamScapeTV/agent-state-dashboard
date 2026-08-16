@@ -16,11 +16,12 @@ const TABLES = [
   "current_coordination",
 ];
 
-test("browser Supabase client is same-origin and uses only a non-secret placeholder credential", () => {
+test("browser Supabase client is same-origin and uses only a non-secret API-key-shaped placeholder", () => {
   assert.match(clientSource, /DASHBOARD_PROXY_PATH = "\/supabase"/);
-  assert.match(clientSource, /DASHBOARD_PLACEHOLDER_KEY = "dashboard-proxy-placeholder"/);
+  assert.match(clientSource, /DASHBOARD_PLACEHOLDER_KEY = "sb_publishable_dashboard_proxy_placeholder"/);
+  assert.doesNotMatch(clientSource, /DASHBOARD_PLACEHOLDER_KEY = "sb_secret_/);
   assert.match(clientSource, /dashboardProxyUrl\(window\.location\.origin\)/);
-  assert.match(clientSource, /createClient\(/);
+  assert.match(clientSource, /createClient\([\s\S]*DASHBOARD_PLACEHOLDER_KEY/);
   assert.match(clientSource, /db: \{ schema: AGENT_STATE_SCHEMA \}/);
   assert.doesNotMatch(browserSources, /SUPABASE_URL|SUPABASE_SECRET_KEY|NEXT_PUBLIC_SUPABASE/i);
   assert.doesNotMatch(browserSources, /https?:\/\/[^"'\s]*\.supabase\.(?:co|in)/i);
