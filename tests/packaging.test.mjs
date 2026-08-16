@@ -45,39 +45,48 @@ const chartVersion = chart.match(/^version:\s*([^\s]+)$/m)?.[1];
 const chartAppVersion = chart.match(/^appVersion:\s*["']?([^"'\s]+)["']?$/m)?.[1];
 const publisherSha = "85b86d260d3212ec1c86433439df598864aa461f";
 
-test("container packages static export behind NGINX and a loopback Node data process", () => {
+test("container builds with Node but runs only pinned NGINX", () => {
   assert.match(dockerfile, new RegExp(`ARG NODE_VERSION=${nodeVersion.replaceAll(".", "\\.")}`));
   const pinnedNodeBases = dockerfile.match(
     /FROM node:\$\{NODE_VERSION\}-alpine@sha256:1b2479dd35a99687d6638f5976fd235e26c5b37e8122f786fcd5fe231d63de5b/g,
   );
-  assert.equal(pinnedNodeBases?.length, 2);
+  assert.equal(pinnedNodeBases?.length, 1);
+  assert.match(dockerfile, /ARG NGINX_VERSION=1\.29\.8/);
+  assert.match(
+    dockerfile,
+    /FROM nginx:\$\{NGINX_VERSION\}-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de AS runtime/,
+  );
   assert.match(dockerfile, /npm ci/);
   assert.match(dockerfile, /npm run build/);
-  assert.match(dockerfile, /test -f server\/index\.mjs/);
-  assert.match(dockerfile, /cp -R server\/\. \/opt\/dashboard\/server\//);
-  assert.doesNotMatch(dockerfile, /if \[ -d server \]/);
-  assert.match(dockerfile, /COPY --from=build[^\n]*\/opt\/dashboard\/static/);
+  assert.match(dockerfile, /test -f out\/index\.html/);
+  assert.match(dockerfile, /test -d out\/_next\/static/);
+  assert.match(dockerfile, /COPY --from=build \/workspace\/out\/ \/usr\/share\/nginx\/html\//);
+  assert.match(dockerfile, /COPY docker\/nginx\.conf \/etc\/nginx\/templates\/nginx\.conf\.template/);
   assert.match(dockerfile, /COPY docker\/security-headers\.conf \/etc\/nginx\/security-headers\.conf/);
+  assert.match(dockerfile, /USER 101/);
   assert.match(dockerfile, /EXPOSE 8080/);
   assert.match(dockerfile, /HEALTHCHECK[^\n]*--interval=30s/);
   assert.match(dockerfile, /127\.0\.0\.1:8080\/healthz/);
-  assert.match(entrypoint, /SERVER_ENTRYPOINT:-\/app\/server\/index\.mjs/);
-  assert.match(entrypoint, /SUPABASE_URL/);
-  assert.match(entrypoint, /SUPABASE_SECRET_KEY/);
-  assert.match(entrypoint, /SERVER_PORT:-8788/);
+  assert.match(dockerfile, /STOPSIGNAL SIGQUIT/);
+  assert.doesNotMatch(dockerfile, /npm ci --omit=dev|\/app\/server|opt\/dashboard\/server|tini|AS runtime[\s\S]*FROM node/);
+  assert.doesNotMatch(dockerfile, /COPY[^\n]*server\//);
+
+  assert.match(entrypoint, /SUPABASE_URL must be supplied by the Kubernetes Secret/);
+  assert.match(entrypoint, /SUPABASE_SECRET_KEY must be supplied by the Kubernetes Secret/);
+  assert.match(entrypoint, /SUPABASE_URL="\$\{SUPABASE_URL%\/\}"/);
+  assert.match(entrypoint, /envsubst '\$\{SUPABASE_URL\} \$\{SUPABASE_SECRET_KEY\}'/);
+  assert.match(entrypoint, /\/tmp\/nginx\.conf/);
+  assert.match(entrypoint, /umask 077/);
   assert.match(entrypoint, /\/tmp\/nginx\/client_temp/);
   assert.match(entrypoint, /\/tmp\/nginx\/proxy_temp/);
-  assert.match(entrypoint, /\/tmp\/nginx\/fastcgi_temp/);
-  assert.match(entrypoint, /\/tmp\/nginx\/uwsgi_temp/);
-  assert.match(entrypoint, /\/tmp\/nginx\/scgi_temp/);
+  assert.match(entrypoint, /unset SUPABASE_URL SUPABASE_SECRET_KEY/);
+  assert.match(entrypoint, /exec nginx -c "\$\{nginx_config\}" -g 'daemon off;'/);
+  assert.doesNotMatch(entrypoint, /SERVER_ENTRYPOINT|SERVER_PORT|\bnode\b|kill -TERM|\bwait\b/);
 
-  const nodeStart = entrypoint.indexOf('node "${SERVER_ENTRYPOINT}" &');
-  const secretUnset = entrypoint.indexOf("unset SUPABASE_URL SUPABASE_SECRET_KEY");
-  const nginxStart = entrypoint.indexOf("nginx -g 'daemon off;' &");
-  assert.ok(nodeStart >= 0 && nodeStart < secretUnset);
-  assert.ok(secretUnset < nginxStart);
-
-  assert.doesNotMatch(`${dockerfile}\n${entrypoint}`, /AGENT_STATE_SUPABASE_SECRET_KEY|TEAM_DOMAIN|POLICY_AUD|fvbaxyklaclgdzyhybbr/);
+  assert.doesNotMatch(
+    `${dockerfile}\n${entrypoint}\n${nginx}`,
+    /AGENT_STATE_SUPABASE_SECRET_KEY|TEAM_DOMAIN|POLICY_AUD|fvbaxyklaclgdzyhybbr/,
+  );
 });
 
 test("static build identity rotates with the release version before immutable caching", () => {
@@ -86,20 +95,46 @@ test("static build identity rotates with the release version before immutable ca
   assert.doesNotMatch(nextConfigSource, /agent-state-dashboard-static/);
 });
 
-test("NGINX proxies local data routes and applies bounded security/cache policy", () => {
+test("NGINX exposes only the read-only same-origin Supabase gateway plus static UI", () => {
   assert.match(nginx, /^worker_processes 1;$/m);
-  assert.match(nginx, /server 127\.0\.0\.1:8788/);
   assert.match(nginx, /location = \/healthz/);
-  assert.match(nginx, /location \/api\//);
-  assert.match(nginx, /location = \/events/);
+  assert.match(nginx, /return 200 "ok\\n"/);
+  assert.doesNotMatch(nginx, /dashboard_server|127\.0\.0\.1:8788|location \/api\/|location = \/events/);
+
+  assert.match(nginx, /location \^~ \/supabase\/rest\/v1\//);
+  assert.match(nginx, /\$request_method !~ \^\(GET\|HEAD\|OPTIONS\)\$/);
+  assert.match(nginx, /return 405/);
+  assert.match(nginx, /proxy_set_header apikey "\$\{SUPABASE_SECRET_KEY\}"/);
+  assert.match(nginx, /proxy_set_header Authorization ""/);
+  assert.match(nginx, /proxy_pass \$\{SUPABASE_URL\}\/rest\/v1\//);
+  assert.match(nginx, /proxy_ssl_server_name on/);
+
+  assert.match(nginx, /map \$http_upgrade \$connection_upgrade/);
+  assert.match(nginx, /map \$arg_vsn \$realtime_vsn/);
+  assert.match(nginx, /default "&vsn=\$arg_vsn"/);
+  assert.match(nginx, /map \$arg_log_level \$realtime_log_level/);
+  assert.match(nginx, /default "&log_level=\$arg_log_level"/);
+  assert.match(nginx, /location = \/supabase\/realtime\/v1\/websocket/);
+  assert.match(
+    nginx,
+    /set \$args "apikey=\$\{SUPABASE_SECRET_KEY\}\$\{realtime_vsn\}\$\{realtime_log_level\}"/,
+  );
+  assert.match(nginx, /proxy_set_header Upgrade \$http_upgrade/);
+  assert.match(nginx, /proxy_set_header Connection \$connection_upgrade/);
+  assert.match(nginx, /proxy_set_header x-api-key "\$\{SUPABASE_SECRET_KEY\}"/);
   assert.match(nginx, /proxy_buffering off/);
+  assert.match(nginx, /proxy_read_timeout 1h/);
+  assert.match(nginx, /proxy_send_timeout 1h/);
+  assert.match(nginx, /proxy_pass \$\{SUPABASE_URL\}\/realtime\/v1\/websocket/);
+  assert.equal((nginx.match(/access_log off;/g) ?? []).length, 3);
+
   assert.match(nginx, /location \/_next\/static\//);
   assert.match(nginx, /immutable/);
   assert.doesNotMatch(nginx, /^\s*expires\s/m);
   assert.match(nginx, /try_files \$uri \$uri\/ \$uri\.html \/index\.html/);
 
   const headerIncludes = nginx.match(/include \/etc\/nginx\/security-headers\.conf;/g);
-  assert.equal(headerIncludes?.length, 4);
+  assert.equal(headerIncludes?.length, 5);
   assert.match(securityHeaders, /X-Content-Type-Options "nosniff" always/);
   assert.match(securityHeaders, /Referrer-Policy "no-referrer" always/);
   assert.match(securityHeaders, /X-Frame-Options "DENY" always/);
