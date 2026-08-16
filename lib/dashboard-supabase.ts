@@ -3,7 +3,11 @@ import { RAW_TABLE_NAMES, type RawTableName } from "@/types/dashboard";
 
 export const AGENT_STATE_SCHEMA = "agent_private";
 export const DASHBOARD_PROXY_PATH = "/supabase";
-export const DASHBOARD_PLACEHOLDER_KEY = "dashboard-proxy-placeholder";
+// supabase-js forwards its client key into Realtime channel auth. Keep the
+// browser value explicitly non-secret but in the recognized sb_publishable_*
+// API-key shape so Realtime treats it as an API key and falls back to the
+// WebSocket tenant token that NGINX authenticates server-side.
+export const DASHBOARD_PLACEHOLDER_KEY = "sb_publishable_dashboard_proxy_placeholder";
 export const DASHBOARD_TABLES: readonly RawTableName[] = RAW_TABLE_NAMES;
 
 const DEFAULT_PAGE_SIZE = 1_000;
