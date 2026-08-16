@@ -1,0 +1,29 @@
+name: Publish tagged dashboard image and chart
+
+run-name: Publish tagged dashboard release ${{ github.ref_name }}
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: agent-state-dashboard-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-tag-image-chart.yml@85b86d260d3212ec1c86433439df598864aa461f
+    with:
+      image_name: agent-state-dashboard
+      chart_name: agent-state-dashboard
+      chart_path: charts/agent-state-dashboard
+      dockerfile_path: Dockerfile
+      build_context: .
+    secrets:
+      registry_username: ${{ secrets.FORGEJO_REGISTRY_USERNAME }}
+      registry_token: ${{ secrets.FORGEJO_REGISTRY_TOKEN }}

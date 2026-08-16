@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agent-state-dashboard.fullname" . }}
+  labels:
+    {{- include "agent-state-dashboard.labels" . | nindent 4 }}
+  {{- if .Values.tailscale.enabled }}
+  annotations:
+    tailscale.com/hostname: {{ .Values.tailscale.hostname | quote }}
+    tailscale.com/tags: {{ join "," .Values.tailscale.tags | quote }}
+    tailscale.com/proxy-group: {{ .Values.tailscale.proxyGroup | quote }}
+  {{- end }}
+spec:
+  {{- if .Values.tailscale.enabled }}
+  type: LoadBalancer
+  loadBalancerClass: tailscale
+  allocateLoadBalancerNodePorts: false
+  {{- else }}
+  type: ClusterIP
+  {{- end }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "agent-state-dashboard.selectorLabels" . | nindent 4 }}
