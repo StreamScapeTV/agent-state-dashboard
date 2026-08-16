@@ -36,7 +36,7 @@ Cloudflare Pages, Pages Functions, advanced-mode Workers, and the former Pages r
 - Next.js App Router static export and TypeScript
 - Material UI
 - `@supabase/supabase-js` in the browser, pointed only at the same-origin `/supabase` gateway
-- Node.js only in the image build stage for deterministic dependency installation, validation, and static export
+- Node.js as a build/development/validation tool only; in the container image it appears only in the build stage and is never a deployed runtime dependency
 - digest-pinned NGINX as the sole deployed application runtime on port `8080`
 - multi-stage Docker/OCI image with no Node runtime dependency
 - versioned OCI Helm chart under `charts/agent-state-dashboard`
