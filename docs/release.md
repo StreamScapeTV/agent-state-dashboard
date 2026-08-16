@@ -4,7 +4,7 @@ This repository publishes producer artifacts only. Flux #288 owns the live clust
 
 ## Release line and identity
 
-`0.1.0` is an immutable historical release identity. Do not republish it, move its tag, reuse its artifact references, or redefine it to represent the pure-NGINX architecture.
+`0.1.0` is an immutable historical release identity. Do not republish it, move its tag, overwrite its published artifact references, or redefine it to represent the pure-NGINX architecture.
 
 The next pure-NGINX release authority is **`0.1.1`**.
 
@@ -23,7 +23,7 @@ For later releases, use the same rule with one canonical stable SemVer value acr
 
 The release candidate must prove the architecture that is actually shipped:
 
-- Node `22.18.0` is used only in the image build stage for `npm ci`, validation, and the deterministic Next static export;
+- Node `22.18.0` is a build/development/validation tool only; in the container image it appears only in the build stage and is never a deployed runtime dependency;
 - the deployed image runtime is digest-pinned NGINX `1.29.8` listening on port `8080`;
 - `/healthz` is served directly by NGINX;
 - there is no local Node server, `/api/*`, `/events`, loopback port `8788`, runtime npm execution, or process supervisor;
