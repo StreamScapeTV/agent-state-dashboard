@@ -92,7 +92,7 @@ export async function readDashboardTable(
 
   while (true) {
     const tableQuery = client.from(table);
-    let query = totalRows === null
+    let query: ReturnType<typeof tableQuery.select> = totalRows === null
       ? tableQuery.select("*", { count: "exact" })
       : tableQuery.select("*");
 
