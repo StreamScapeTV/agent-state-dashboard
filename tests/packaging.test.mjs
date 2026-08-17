@@ -240,17 +240,25 @@ test("Helm schema models the complete public values surface and locks security i
   assert.equal(containerSecurity?.properties?.capabilities?.properties?.drop?.items?.const, "ALL");
 });
 
-test("Helm workload reads secrets by reference and has bounded probes/resources/security", () => {
+test("Helm workload matches the pure-NGINX runtime and keeps bounded security", () => {
   assert.match(deployment, /secretKeyRef:/);
   assert.match(deployment, /name: SUPABASE_URL/);
   assert.match(deployment, /name: SUPABASE_SECRET_KEY/);
+  assert.doesNotMatch(deployment, /name: (?:SERVER_HOST|SERVER_PORT|HOST|PORT)\b/);
+  assert.doesNotMatch(deployment, /127\.0\.0\.1:8788|value: "8788"/);
+  assert.match(deployment, /containerPort: 8080/);
   assert.match(deployment, /readinessProbe:/);
   assert.match(deployment, /livenessProbe:/);
   assert.match(deployment, /path: \/healthz/);
+  assert.match(deployment, /mountPath: \/tmp/);
+  assert.match(deployment, /emptyDir:/);
+  assert.match(deployment, /sizeLimit: 32Mi/);
   assert.match(deployment, /resources:/);
   assert.match(deployment, /automountServiceAccountToken: false/);
   assert.match(deployment, /imagePullSecrets:/);
   assert.match(deployment, /toYaml \.Values\.securityContext/);
+  assert.match(deployment, /if \.Values\.image\.digest/);
+  assert.match(deployment, /image: "\{\{ \.Values\.image\.repository \}\}@\{\{ \.Values\.image\.digest \}\}"/);
   assert.match(values, /readOnlyRootFilesystem: true/);
   assert.doesNotMatch(deployment, /value:\s*['"]?https?:\/\/[^\s]+supabase/);
 });
