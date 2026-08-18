@@ -45,7 +45,7 @@ test("tag mutation uses only the organization maintenance authority after admiss
   assert.match(tagJob, /ORGANIZATION_MAINTENANCE_TOKEN: \$\{\{ secrets\.ORGANIZATION_MAINTENANCE_TOKEN \}\}/);
   assert.match(tagStep, /ORGANIZATION_MAINTENANCE_TOKEN/);
   assert.doesNotMatch(tagStep, /github\.token|GITHUB_TOKEN|ADMISSION_TOKEN|ACTIONS_READ_TOKEN|ISSUE_COMMENT_TOKEN/);
-  assert.match(tagStep, new RegExp(`RELEASE_SOURCE_SHA: ${releaseSourceSha}`));
+  assert.match(tagJob, new RegExp(`RELEASE_SOURCE_SHA: ${releaseSourceSha}`));
   assert.match(tagStep, /\/git\/ref\/heads\/main/);
   assert.match(tagStep, /\/compare\/\{release_source_sha\}\.\.\.\{admitted_base_sha\}/);
   assert.match(tagStep, /merge_base_commit/);
