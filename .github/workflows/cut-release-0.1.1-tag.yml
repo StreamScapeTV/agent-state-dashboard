@@ -1,59 +1,165 @@
 name: Cut immutable dashboard 0.1.1 tag
 
 on:
-  workflow_run:
-    workflows: ["Node validation"]
-    types: [completed]
+  pull_request_target:
+    types: [opened]
 
 permissions:
   actions: read
   contents: read
   issues: write
+  pull-requests: read
 
 concurrency:
   group: agent-state-dashboard-cut-release-0.1.1
   cancel-in-progress: false
 
 jobs:
-  cut_tag:
-    name: Cut exact 0.1.1 release tag
+  admit_cleanup:
+    name: Admit exact temporary-helper cleanup PR
     if: >-
       github.repository == 'StreamScapeTV/agent-state-dashboard' &&
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.id == 32136685577 &&
-      github.event.workflow_run.name == 'Node validation' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_repository.full_name == 'StreamScapeTV/agent-state-dashboard' &&
-      github.event.workflow_run.head_sha == '69bb56cd0083b668a76d20ee32d247700923b41b'
+      github.event_name == 'pull_request_target' &&
+      github.event.action == 'opened' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == 'StreamScapeTV/agent-state-dashboard' &&
+      github.event.pull_request.head.ref == 'orchestrator/issue-42-remove-tag-helper' &&
+      github.event.pull_request.user.login == 'mimranfaruqi' &&
+      github.event.pull_request.title == '[#42] Remove temporary 0.1.1 tag helper' &&
+      github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    outputs:
+      base_sha: ${{ steps.admit.outputs.base_sha }}
+      cleanup_head_sha: ${{ steps.admit.outputs.cleanup_head_sha }}
+      pr_number: ${{ steps.admit.outputs.pr_number }}
     env:
-      RELEASE_TAG: 0.1.1
-      RELEASE_SOURCE_SHA: c86db7ae3dd9a223e42cd2c4830b75fc175f72a9
-      TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
-      TRIGGER_RUN_NAME: ${{ github.event.workflow_run.name }}
-      TRIGGER_RUN_EVENT: ${{ github.event.workflow_run.event }}
-      TRIGGER_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-      TRIGGER_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
-      TRIGGER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-      ORGANIZATION_MAINTENANCE_TOKEN: ${{ secrets.ORGANIZATION_MAINTENANCE_TOKEN }}
+      ADMISSION_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
-      - name: Require exact successful validated run and non-recursive tag authority
+      - id: admit
+        name: Verify exact cleanup-only diff and current main base
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "${GITHUB_EVENT_NAME}" = workflow_run
-          test "${GITHUB_REF}" = refs/heads/main
-          test "${GITHUB_REPOSITORY}" = StreamScapeTV/agent-state-dashboard
-          test "${TRIGGER_RUN_ID}" = 32136685577
-          test "${TRIGGER_RUN_NAME}" = "Node validation"
-          test "${TRIGGER_RUN_EVENT}" = pull_request
-          test "${TRIGGER_RUN_CONCLUSION}" = success
-          test "${TRIGGER_HEAD_REPOSITORY}" = StreamScapeTV/agent-state-dashboard
-          test "${TRIGGER_HEAD_SHA}" = 69bb56cd0083b668a76d20ee32d247700923b41b
-          test -n "${ORGANIZATION_MAINTENANCE_TOKEN}"
+          python3 - <<'PY'
+          from __future__ import annotations
 
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          event_name = os.environ["GITHUB_EVENT_NAME"]
+          github_sha = os.environ["GITHUB_SHA"]
+          pr_number = os.environ["PR_NUMBER"]
+          pr_base_sha = os.environ["PR_BASE_SHA"]
+          pr_head_sha = os.environ["PR_HEAD_SHA"]
+          token = os.environ["ADMISSION_TOKEN"]
+
+          if event_name != "pull_request_target":
+              raise SystemExit("cleanup_admission_event_mismatch")
+          if repository != "StreamScapeTV/agent-state-dashboard":
+              raise SystemExit("cleanup_admission_repository_mismatch")
+          if re.fullmatch(r"[1-9][0-9]*", pr_number) is None:
+              raise SystemExit("cleanup_admission_pr_number_invalid")
+          for name, value in (("base", pr_base_sha), ("head", pr_head_sha), ("github", github_sha)):
+              if re.fullmatch(r"[0-9a-f]{40}", value) is None:
+                  raise SystemExit(f"cleanup_admission_{name}_sha_invalid")
+          if pr_base_sha != github_sha:
+              raise SystemExit("cleanup_admission_base_sha_mismatch")
+          if not token:
+              raise SystemExit("cleanup_admission_token_required")
+
+          api = f"https://api.github.com/repos/{repository}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "User-Agent": "StreamScapeTV-agent-state-dashboard-cleanup-admission",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def get(path: str):
+              request = urllib.request.Request(f"{api}{path}", headers=headers, method="GET")
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      raw = response.read(1_000_001)
+              except urllib.error.HTTPError as error:
+                  raise SystemExit(f"cleanup_admission_github_http_{error.code}") from None
+              except OSError:
+                  raise SystemExit("cleanup_admission_github_request_failed") from None
+              if len(raw) > 1_000_000:
+                  raise SystemExit("cleanup_admission_response_too_large")
+              try:
+                  return json.loads(raw.decode("utf-8"))
+              except (UnicodeDecodeError, json.JSONDecodeError):
+                  raise SystemExit("cleanup_admission_response_invalid") from None
+
+          main_ref = get("/git/ref/heads/main")
+          if not isinstance(main_ref, dict) or main_ref.get("object", {}).get("sha") != pr_base_sha:
+              raise SystemExit("cleanup_admission_main_drifted")
+
+          pull = get(f"/pulls/{pr_number}")
+          if not isinstance(pull, dict):
+              raise SystemExit("cleanup_admission_pull_invalid")
+          expected = {
+              "base": ("main", pr_base_sha),
+              "head": ("orchestrator/issue-42-remove-tag-helper", pr_head_sha),
+          }
+          for side, (expected_ref, expected_sha) in expected.items():
+              row = pull.get(side, {})
+              if row.get("ref") != expected_ref or row.get("sha") != expected_sha:
+                  raise SystemExit(f"cleanup_admission_{side}_identity_mismatch")
+          if pull.get("head", {}).get("repo", {}).get("full_name") != repository:
+              raise SystemExit("cleanup_admission_head_repository_mismatch")
+          if pull.get("user", {}).get("login") != "mimranfaruqi":
+              raise SystemExit("cleanup_admission_author_mismatch")
+          if pull.get("title") != "[#42] Remove temporary 0.1.1 tag helper" or pull.get("draft") is not False:
+              raise SystemExit("cleanup_admission_metadata_mismatch")
+
+          files = get(f"/pulls/{pr_number}/files?per_page=100")
+          if not isinstance(files, list):
+              raise SystemExit("cleanup_admission_files_invalid")
+          expected_files = {
+              ".github/workflows/cut-release-0.1.1-tag.yml",
+              "tests/release-tag-cut.test.mjs",
+          }
+          filenames = {row.get("filename") for row in files if isinstance(row, dict)}
+          if filenames != expected_files or len(files) != 2:
+              raise SystemExit("cleanup_admission_file_set_mismatch")
+          if any(row.get("status") != "removed" for row in files if isinstance(row, dict)):
+              raise SystemExit("cleanup_admission_requires_deletions_only")
+
+          evidence = {
+              "base_sha": pr_base_sha,
+              "cleanup_head_sha": pr_head_sha,
+              "pr_number": pr_number,
+              "removed_files": sorted(expected_files),
+          }
+          print(json.dumps(evidence, separators=(",", ":"), sort_keys=True))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"base_sha={pr_base_sha}\n")
+              output.write(f"cleanup_head_sha={pr_head_sha}\n")
+              output.write(f"pr_number={pr_number}\n")
+          PY
+
+  cut_tag:
+    name: Cut exact 0.1.1 release tag
+    needs: admit_cleanup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      RELEASE_TAG: 0.1.1
+      RELEASE_SOURCE_SHA: c86db7ae3dd9a223e42cd2c4830b75fc175f72a9
+      ADMITTED_BASE_SHA: ${{ needs.admit_cleanup.outputs.base_sha }}
+      CLEANUP_HEAD_SHA: ${{ needs.admit_cleanup.outputs.cleanup_head_sha }}
+      CLEANUP_PR_NUMBER: ${{ needs.admit_cleanup.outputs.pr_number }}
+      ORGANIZATION_MAINTENANCE_TOKEN: ${{ secrets.ORGANIZATION_MAINTENANCE_TOKEN }}
+    steps:
       - id: tag
         name: Create and read back exact lightweight release tag
         shell: bash
@@ -71,37 +177,30 @@ jobs:
 
           repository = os.environ["GITHUB_REPOSITORY"]
           event_name = os.environ["GITHUB_EVENT_NAME"]
-          branch_ref = os.environ["GITHUB_REF"]
           caller_sha = os.environ["GITHUB_SHA"]
-          trigger_run_id = os.environ["TRIGGER_RUN_ID"]
-          trigger_run_name = os.environ["TRIGGER_RUN_NAME"]
-          trigger_run_event = os.environ["TRIGGER_RUN_EVENT"]
-          trigger_run_conclusion = os.environ["TRIGGER_RUN_CONCLUSION"]
-          trigger_head_repository = os.environ["TRIGGER_HEAD_REPOSITORY"]
-          trigger_head_sha = os.environ["TRIGGER_HEAD_SHA"]
+          admitted_base_sha = os.environ["ADMITTED_BASE_SHA"]
+          cleanup_head_sha = os.environ["CLEANUP_HEAD_SHA"]
+          cleanup_pr_number = os.environ["CLEANUP_PR_NUMBER"]
           release_tag = os.environ["RELEASE_TAG"]
           release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
           token = os.environ["ORGANIZATION_MAINTENANCE_TOKEN"]
 
-          if event_name != "workflow_run" or branch_ref != "refs/heads/main":
+          if event_name != "pull_request_target" or repository != "StreamScapeTV/agent-state-dashboard":
               raise SystemExit("release_tag_event_not_trusted")
-          if repository != "StreamScapeTV/agent-state-dashboard":
-              raise SystemExit("release_tag_repository_mismatch")
-          if (
-              trigger_run_id != "32136685577"
-              or trigger_run_name != "Node validation"
-              or trigger_run_event != "pull_request"
-              or trigger_run_conclusion != "success"
-              or trigger_head_repository != "StreamScapeTV/agent-state-dashboard"
-              or trigger_head_sha != "69bb56cd0083b668a76d20ee32d247700923b41b"
+          for name, value in (
+              ("caller", caller_sha),
+              ("base", admitted_base_sha),
+              ("cleanup", cleanup_head_sha),
+              ("source", release_source_sha),
           ):
-              raise SystemExit("release_tag_workflow_run_not_trusted")
-          if re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", release_tag) is None:
-              raise SystemExit("release_tag_invalid")
-          if re.fullmatch(r"[0-9a-f]{40}", release_source_sha) is None:
-              raise SystemExit("release_source_sha_invalid")
-          if re.fullmatch(r"[0-9a-f]{40}", caller_sha) is None:
-              raise SystemExit("caller_sha_invalid")
+              if re.fullmatch(r"[0-9a-f]{40}", value) is None:
+                  raise SystemExit(f"release_tag_{name}_sha_invalid")
+          if caller_sha != admitted_base_sha:
+              raise SystemExit("release_tag_base_drifted")
+          if re.fullmatch(r"[1-9][0-9]*", cleanup_pr_number) is None:
+              raise SystemExit("release_tag_cleanup_pr_invalid")
+          if release_tag != "0.1.1":
+              raise SystemExit("release_tag_identity_invalid")
           if not token or any(character in token for character in "\x00\r\n"):
               raise SystemExit("organization_maintenance_token_required")
 
@@ -137,14 +236,14 @@ jobs:
                   raise SystemExit("github_request_failed") from None
 
           main_ref = request("GET", "/git/ref/heads/main")
-          if main_ref.get("object", {}).get("type") != "commit" or main_ref.get("object", {}).get("sha") != caller_sha:
-              raise SystemExit("main_head_drifted")
+          if main_ref.get("object", {}).get("type") != "commit" or main_ref.get("object", {}).get("sha") != admitted_base_sha:
+              raise SystemExit("release_tag_main_drifted")
 
           target_commit = request("GET", f"/git/commits/{release_source_sha}")
           if target_commit.get("sha") != release_source_sha:
               raise SystemExit("release_source_commit_mismatch")
 
-          comparison = request("GET", f"/compare/{release_source_sha}...{caller_sha}")
+          comparison = request("GET", f"/compare/{release_source_sha}...{admitted_base_sha}")
           if comparison.get("status") not in {"ahead", "identical"}:
               raise SystemExit("release_source_not_ancestor")
           if comparison.get("merge_base_commit", {}).get("sha") != release_source_sha:
@@ -154,14 +253,9 @@ jobs:
           tag_path = f"/git/ref/tags/{encoded_tag}"
           existing = request("GET", tag_path, missing_ok=True)
           action = "verified-existing"
-
           if existing is None:
               try:
-                  request(
-                      "POST",
-                      "/git/refs",
-                      {"ref": f"refs/tags/{release_tag}", "sha": release_source_sha},
-                  )
+                  request("POST", "/git/refs", {"ref": f"refs/tags/{release_tag}", "sha": release_source_sha})
                   action = "created"
               except SystemExit as error:
                   if str(error) != "github_http_422":
@@ -177,13 +271,12 @@ jobs:
 
           evidence = {
               "action": action,
-              "repository": repository,
-              "tag": release_tag,
+              "cleanup_head_sha": cleanup_head_sha,
+              "cleanup_pr_number": cleanup_pr_number,
               "ref": f"refs/tags/{release_tag}",
+              "repository": repository,
               "source_sha": release_source_sha,
-              "trigger_sha": caller_sha,
-              "validated_run_id": trigger_run_id,
-              "validated_head_sha": trigger_head_sha,
+              "tag": release_tag,
           }
           print(json.dumps(evidence, separators=(",", ":"), sort_keys=True))
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
@@ -211,11 +304,7 @@ jobs:
 
           repository = os.environ["GITHUB_REPOSITORY"]
           release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
-          release_tag = os.environ["RELEASE_TAG"]
           token = os.environ["ACTIONS_READ_TOKEN"]
-          if not token:
-              raise SystemExit("actions_read_token_required")
-
           query = urllib.parse.urlencode({"event": "push", "per_page": "20"})
           url = f"https://api.github.com/repos/{repository}/actions/workflows/release.yml/runs?{query}"
           headers = {
@@ -224,20 +313,18 @@ jobs:
               "User-Agent": "StreamScapeTV-agent-state-dashboard-release-observer",
               "X-GitHub-Api-Version": "2022-11-28",
           }
-
           observed = None
-          for attempt in range(30):
-              req = urllib.request.Request(url, headers=headers, method="GET")
+          for attempt in range(45):
+              request = urllib.request.Request(url, headers=headers, method="GET")
               try:
-                  with urllib.request.urlopen(req, timeout=30) as response:
+                  with urllib.request.urlopen(request, timeout=30) as response:
                       payload = json.load(response)
               except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError):
                   payload = {}
               runs = payload.get("workflow_runs", []) if isinstance(payload, dict) else []
               observed = next(
                   (
-                      run
-                      for run in runs
+                      run for run in runs
                       if isinstance(run, dict)
                       and run.get("event") == "push"
                       and run.get("head_sha") == release_source_sha
@@ -247,30 +334,16 @@ jobs:
               )
               if observed is not None:
                   break
-              if attempt < 29:
+              if attempt < 44:
                   time.sleep(2)
-
           if observed is None:
               raise SystemExit("release_run_not_observed")
-
           run_id = observed.get("id")
           if not isinstance(run_id, int) or run_id <= 0:
               raise SystemExit("release_run_id_invalid")
-          run_url = observed.get("html_url")
-          if not isinstance(run_url, str) or not run_url.startswith(f"https://github.com/{repository}/actions/runs/"):
-              raise SystemExit("release_run_url_invalid")
-
-          evidence = {
-              "release_run_id": run_id,
-              "release_run_status": observed.get("status"),
-              "release_run_conclusion": observed.get("conclusion"),
-              "release_source_sha": release_source_sha,
-              "release_tag": release_tag,
-          }
-          print(json.dumps(evidence, separators=(",", ":"), sort_keys=True))
+          print(json.dumps({"release_run_id": run_id, "status": observed.get("status"), "conclusion": observed.get("conclusion")}, separators=(",", ":"), sort_keys=True))
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"run_id={run_id}\n")
-              output.write(f"run_url={run_url}\n")
           PY
 
       - name: Report bounded tag-cut evidence to issue 42
@@ -296,33 +369,30 @@ jobs:
           helper_run_id = os.environ["GITHUB_RUN_ID"]
           release_tag = os.environ["RELEASE_TAG"]
           release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
+          cleanup_pr = os.environ["CLEANUP_PR_NUMBER"]
           tag_outcome = os.environ.get("TAG_OUTCOME", "")
           tag_action = os.environ.get("TAG_ACTION", "")
           release_lookup_outcome = os.environ.get("RELEASE_LOOKUP_OUTCOME", "")
           release_run_id = os.environ.get("RELEASE_RUN_ID", "")
           token = os.environ["ISSUE_COMMENT_TOKEN"]
-
           marker = "<!-- agent-state-dashboard-release-tag-cut-0.1.1 -->"
           if tag_outcome == "success" and release_lookup_outcome == "success" and release_run_id:
               message = (
-                  f"{marker}\nRelease tag-cut helper run `{helper_run_id}` verified lightweight tag "
-                  f"`{release_tag}` -> `{release_source_sha}` (`{tag_action}`) from validated Node run "
-                  f"`{os.environ['TRIGGER_RUN_ID']}` and observed tag-triggered publication run `{release_run_id}`."
+                  f"{marker}\nRelease tag-cut helper run `{helper_run_id}` admitted cleanup PR `#{cleanup_pr}`, "
+                  f"verified lightweight tag `{release_tag}` -> `{release_source_sha}` (`{tag_action}`), and observed "
+                  f"tag-triggered publication run `{release_run_id}`."
               )
           elif tag_outcome == "success":
               message = (
-                  f"{marker}\nRelease tag-cut helper run `{helper_run_id}` verified lightweight tag "
-                  f"`{release_tag}` -> `{release_source_sha}` (`{tag_action}`) from validated Node run "
-                  f"`{os.environ['TRIGGER_RUN_ID']}`, but the downstream tag-triggered publication run was not "
-                  "observed within the bounded lookup window."
+                  f"{marker}\nRelease tag-cut helper run `{helper_run_id}` admitted cleanup PR `#{cleanup_pr}` and "
+                  f"verified lightweight tag `{release_tag}` -> `{release_source_sha}` (`{tag_action}`), but the "
+                  "downstream publication run was not observed within the bounded lookup window."
               )
           else:
               message = (
-                  f"{marker}\nRelease tag-cut helper run `{helper_run_id}` did not verify tag "
-                  f"`{release_tag}` at `{release_source_sha}` from validated Node run "
-                  f"`{os.environ['TRIGGER_RUN_ID']}`; no producer completion is claimed."
+                  f"{marker}\nRelease tag-cut helper run `{helper_run_id}` did not verify tag `{release_tag}` at "
+                  f"`{release_source_sha}` after cleanup PR `#{cleanup_pr}` admission; no producer completion is claimed."
               )
-
           body = json.dumps({"body": message}, separators=(",", ":")).encode("utf-8")
           request = urllib.request.Request(
               f"https://api.github.com/repos/{repository}/issues/42/comments",
