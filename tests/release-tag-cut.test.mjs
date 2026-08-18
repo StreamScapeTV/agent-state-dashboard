@@ -2,72 +2,95 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const workflow = await readFile(
+const helper = await readFile(
   new URL("../.github/workflows/cut-release-0.1.1-tag.yml", import.meta.url),
+  "utf8",
+);
+const dispatcher = await readFile(
+  new URL("../.github/workflows/cut-release-0.1.1-pr.yml", import.meta.url),
   "utf8",
 );
 
 const releaseSourceSha = "c86db7ae3dd9a223e42cd2c4830b75fc175f72a9";
-const admission = workflow.split("admit_cleanup:", 2)[1]?.split("cut_tag:", 1)[0] ?? "";
-const tagJob = workflow.split("cut_tag:", 2)[1] ?? "";
-const tagStep = tagJob.split("- id: tag", 2)[1]?.split("- id: release", 1)[0] ?? "";
-const observer = tagJob.split("- id: release", 2)[1]?.split("- name: Report bounded", 1)[0] ?? "";
-const reporter = tagJob.split("- name: Report bounded", 2)[1] ?? "";
+const requestId = "issue-42-pr49-cut-0.1.1";
+const helperAdmission = helper.split("admit_cleanup:", 2)[1]?.split("cut_tag:", 1)[0] ?? "";
+const helperTagJob = helper.split("cut_tag:", 2)[1] ?? "";
+const helperTagStep = helperTagJob.split("- id: tag", 2)[1]?.split("- id: release", 1)[0] ?? "";
 
-test("0.1.1 tag helper is driven only by the finalized temporary-helper cleanup PR", () => {
-  assert.match(workflow, /pull_request_target:\n\s+types: \[opened\]/);
-  assert.doesNotMatch(workflow, /workflow_run:/);
-  assert.doesNotMatch(workflow, /issue_comment:/);
-  assert.doesNotMatch(workflow, /workflow_dispatch:/);
-  assert.match(workflow, /github\.event\.pull_request\.base\.ref == 'main'/);
-  assert.match(workflow, /github\.event\.pull_request\.head\.repo\.full_name == 'StreamScapeTV\/agent-state-dashboard'/);
-  assert.match(workflow, /github\.event\.pull_request\.head\.ref == 'orchestrator\/issue-42-remove-tag-helper'/);
-  assert.match(workflow, /github\.event\.pull_request\.user\.login == 'mimranfaruqi'/);
-  assert.match(workflow, /github\.event\.pull_request\.title == '\[#42\] Remove temporary 0\.1\.1 tag helper'/);
-  assert.match(workflow, /github\.event\.pull_request\.draft == false/);
+test("default-branch tag helper is workflow-dispatch-only and one-shot", () => {
+  assert.match(helper, /workflow_dispatch:/);
+  assert.match(helper, /request_id:/);
+  assert.match(helper, /cleanup_pr:/);
+  assert.match(helper, /cleanup_head_sha:/);
+  assert.doesNotMatch(helper, /pull_request_target:/);
+  assert.doesNotMatch(helper, /issue_comment:/);
+  assert.doesNotMatch(helper, /workflow_run:/);
+  assert.match(helper, new RegExp(requestId.replaceAll(".", "\\.")));
+  assert.match(helper, new RegExp(`RELEASE_SOURCE_SHA: ${releaseSourceSha}`));
 });
 
-test("cleanup admission is read-only and proves exactly two deletions before privileged work", () => {
-  assert.match(workflow, /pull-requests: read/);
-  assert.match(admission, /ADMISSION_TOKEN: \$\{\{ github\.token \}\}/);
-  assert.doesNotMatch(admission, /ORGANIZATION_MAINTENANCE_TOKEN/);
-  assert.match(admission, /\/pulls\/\{pr_number\}\/files\?per_page=100/);
-  assert.match(admission, /\.github\/workflows\/cut-release-0\.1\.1-tag\.yml/);
-  assert.match(admission, /tests\/release-tag-cut\.test\.mjs/);
-  assert.match(admission, /filenames != expected_files or len\(files\) != 2/);
-  assert.match(admission, /row\.get\("status"\) != "removed"/);
-  assert.match(admission, /cleanup_admission_requires_deletions_only/);
-  assert.match(admission, /cleanup_admission_main_drifted/);
+test("helper re-admits exact PR 49 cleanup before exposing mutation authority", () => {
+  assert.match(helperAdmission, /github\.event_name == 'workflow_dispatch'/);
+  assert.match(helperAdmission, /inputs\.request_id == 'issue-42-pr49-cut-0\.1\.1'/);
+  assert.match(helperAdmission, /PR_NUMBER: \$\{\{ inputs\.cleanup_pr \}\}/);
+  assert.match(helperAdmission, /PR_HEAD_SHA: \$\{\{ inputs\.cleanup_head_sha \}\}/);
+  assert.match(helperAdmission, /ADMISSION_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.doesNotMatch(helperAdmission, /ORGANIZATION_MAINTENANCE_TOKEN/);
+  assert.match(helperAdmission, /pr_number != "49"/);
+  assert.match(helperAdmission, /orchestrator\/issue-42-remove-tag-helper/);
+  assert.match(helperAdmission, /\[#42\] Remove temporary 0\.1\.1 tag helper/);
+  assert.match(helperAdmission, /\.github\/workflows\/cut-release-0\.1\.1-tag\.yml/);
+  assert.match(helperAdmission, /tests\/release-tag-cut\.test\.mjs/);
+  assert.match(helperAdmission, /filenames != expected_files or len\(files\) != 2/);
+  assert.match(helperAdmission, /cleanup_admission_requires_deletions_only/);
 });
 
-test("tag mutation uses only the organization maintenance authority after admission", () => {
-  assert.match(tagJob, /needs: admit_cleanup/);
-  assert.match(tagJob, /ORGANIZATION_MAINTENANCE_TOKEN: \$\{\{ secrets\.ORGANIZATION_MAINTENANCE_TOKEN \}\}/);
-  assert.match(tagStep, /ORGANIZATION_MAINTENANCE_TOKEN/);
-  assert.doesNotMatch(tagStep, /github\.token|GITHUB_TOKEN|ADMISSION_TOKEN|ACTIONS_READ_TOKEN|ISSUE_COMMENT_TOKEN/);
-  assert.match(tagJob, new RegExp(`RELEASE_SOURCE_SHA: ${releaseSourceSha}`));
-  assert.match(tagStep, /\/git\/ref\/heads\/main/);
-  assert.match(tagStep, /\/compare\/\{release_source_sha\}\.\.\.\{admitted_base_sha\}/);
-  assert.match(tagStep, /merge_base_commit/);
-  assert.match(tagStep, /"POST", "\/git\/refs"/);
-  assert.match(tagStep, /"ref": f"refs\/tags\/\{release_tag\}"/);
-  assert.match(tagStep, /release_tag_not_lightweight_commit/);
-  assert.match(tagStep, /release_tag_target_mismatch/);
+test("tag mutation remains isolated to organization maintenance authority", () => {
+  assert.match(helperTagJob, /needs: admit_cleanup/);
+  assert.match(
+    helperTagJob,
+    /ORGANIZATION_MAINTENANCE_TOKEN: \$\{\{ secrets\.ORGANIZATION_MAINTENANCE_TOKEN \}\}/,
+  );
+  assert.match(helperTagStep, /ORGANIZATION_MAINTENANCE_TOKEN/);
+  assert.doesNotMatch(helperTagStep, /github\.token|GITHUB_TOKEN|ADMISSION_TOKEN|ACTIONS_READ_TOKEN|ISSUE_COMMENT_TOKEN/);
+  assert.match(helperTagStep, /event_name != "workflow_dispatch"/);
+  assert.match(helperTagStep, /cleanup_pr_number != "49"/);
+  assert.match(helperTagStep, /\/compare\/\{release_source_sha\}\.\.\.\{admitted_base_sha\}/);
+  assert.match(helperTagStep, /"POST", "\/git\/refs"/);
+  assert.match(helperTagStep, /"ref": f"refs\/tags\/\{release_tag\}"/);
+  assert.match(helperTagStep, /release_tag_target_mismatch/);
 });
 
-test("ordinary workflow token is limited to publication observation and issue reporting", () => {
-  assert.match(observer, /ACTIONS_READ_TOKEN: \$\{\{ github\.token \}\}/);
-  assert.match(observer, /\/actions\/workflows\/release\.yml\/runs/);
-  assert.match(observer, /run\.get\("head_sha"\) == release_source_sha/);
-  assert.match(reporter, /ISSUE_COMMENT_TOKEN: \$\{\{ github\.token \}\}/);
-  assert.match(reporter, /\/issues\/42\/comments/);
-  assert.match(reporter, /no producer completion is claimed/);
-  assert.doesNotMatch(observer, /\/git\/refs|refs\/tags/);
-  assert.doesNotMatch(reporter, /\/git\/refs|refs\/tags/);
+test("PR dispatcher is unprivileged and only synchronizes exact cleanup PR 49", () => {
+  assert.match(dispatcher, /pull_request:\n\s+branches:\n\s+- main\n\s+types: \[synchronize\]/);
+  assert.match(dispatcher, /actions: write/);
+  assert.match(dispatcher, /contents: read/);
+  assert.match(dispatcher, /pull-requests: read/);
+  assert.match(dispatcher, /github\.event\.pull_request\.number == 49/);
+  assert.match(dispatcher, /github\.event\.pull_request\.head\.ref == 'orchestrator\/issue-42-remove-tag-helper'/);
+  assert.match(dispatcher, /github\.event\.pull_request\.user\.login == 'mimranfaruqi'/);
+  assert.match(dispatcher, /github\.event\.pull_request\.title == '\[#42\] Remove temporary 0\.1\.1 tag helper'/);
+  assert.match(dispatcher, /DISPATCH_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.doesNotMatch(dispatcher, /ORGANIZATION_MAINTENANCE_TOKEN|FORGEJO_REGISTRY|SUPABASE|KUBE|SOPS|TAILSCALE/);
 });
 
-test("tag helper contains no producer publication or deployment implementation", () => {
-  assert.doesNotMatch(workflow, /buildah|podman|docker build|helm |kubectl|flux |latest/i);
-  assert.doesNotMatch(workflow, /git\.faruqi\.dev|helm-charts|agent-state-dashboard:0\.1\.1/);
-  assert.doesNotMatch(workflow, /upload-artifact|download-artifact/);
+test("dispatcher verifies two deletions then dispatches helper on main", () => {
+  assert.match(dispatcher, /\/pulls\/\{pr_number\}\/files\?per_page=100/);
+  assert.match(dispatcher, /\.github\/workflows\/cut-release-0\.1\.1-tag\.yml/);
+  assert.match(dispatcher, /tests\/release-tag-cut\.test\.mjs/);
+  assert.match(dispatcher, /filenames != expected_files or len\(files\) != 2/);
+  assert.match(dispatcher, /tag_dispatch_requires_deletions_only/);
+  assert.match(dispatcher, /\/actions\/workflows\/cut-release-0\.1\.1-tag\.yml\/dispatches/);
+  assert.match(dispatcher, /"ref": "main"/);
+  assert.match(dispatcher, new RegExp(`"request_id": "${requestId}"`));
+  assert.match(dispatcher, /"cleanup_pr": pr_number/);
+  assert.match(dispatcher, /"cleanup_head_sha": pr_head_sha/);
+  assert.match(dispatcher, /response\.status != 204/);
+});
+
+test("temporary tag machinery contains no image, chart, or deployment implementation", () => {
+  const combined = `${helper}\n${dispatcher}`;
+  assert.doesNotMatch(combined, /buildah|podman|docker build|helm |kubectl|flux |latest/i);
+  assert.doesNotMatch(combined, /git\.faruqi\.dev|helm-charts|agent-state-dashboard:0\.1\.1/);
+  assert.doesNotMatch(combined, /upload-artifact|download-artifact/);
 });

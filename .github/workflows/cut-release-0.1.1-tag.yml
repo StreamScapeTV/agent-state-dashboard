@@ -1,8 +1,20 @@
 name: Cut immutable dashboard 0.1.1 tag
 
 on:
-  pull_request_target:
-    types: [opened]
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Exact one-shot release request identity
+        required: true
+        type: string
+      cleanup_pr:
+        description: Cleanup pull request number to admit
+        required: true
+        type: string
+      cleanup_head_sha:
+        description: Exact cleanup pull request head SHA
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -19,14 +31,8 @@ jobs:
     name: Admit exact temporary-helper cleanup PR
     if: >-
       github.repository == 'StreamScapeTV/agent-state-dashboard' &&
-      github.event_name == 'pull_request_target' &&
-      github.event.action == 'opened' &&
-      github.event.pull_request.base.ref == 'main' &&
-      github.event.pull_request.head.repo.full_name == 'StreamScapeTV/agent-state-dashboard' &&
-      github.event.pull_request.head.ref == 'orchestrator/issue-42-remove-tag-helper' &&
-      github.event.pull_request.user.login == 'mimranfaruqi' &&
-      github.event.pull_request.title == '[#42] Remove temporary 0.1.1 tag helper' &&
-      github.event.pull_request.draft == false
+      github.event_name == 'workflow_dispatch' &&
+      inputs.request_id == 'issue-42-pr49-cut-0.1.1'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -35,9 +41,9 @@ jobs:
       pr_number: ${{ steps.admit.outputs.pr_number }}
     env:
       ADMISSION_TOKEN: ${{ github.token }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      REQUEST_ID: ${{ inputs.request_id }}
+      PR_NUMBER: ${{ inputs.cleanup_pr }}
+      PR_HEAD_SHA: ${{ inputs.cleanup_head_sha }}
     steps:
       - id: admit
         name: Verify exact cleanup-only diff and current main base
@@ -55,23 +61,23 @@ jobs:
 
           repository = os.environ["GITHUB_REPOSITORY"]
           event_name = os.environ["GITHUB_EVENT_NAME"]
-          github_sha = os.environ["GITHUB_SHA"]
+          caller_sha = os.environ["GITHUB_SHA"]
+          request_id = os.environ["REQUEST_ID"]
           pr_number = os.environ["PR_NUMBER"]
-          pr_base_sha = os.environ["PR_BASE_SHA"]
-          pr_head_sha = os.environ["PR_HEAD_SHA"]
+          expected_head_sha = os.environ["PR_HEAD_SHA"]
           token = os.environ["ADMISSION_TOKEN"]
 
-          if event_name != "pull_request_target":
+          if event_name != "workflow_dispatch":
               raise SystemExit("cleanup_admission_event_mismatch")
           if repository != "StreamScapeTV/agent-state-dashboard":
               raise SystemExit("cleanup_admission_repository_mismatch")
-          if re.fullmatch(r"[1-9][0-9]*", pr_number) is None:
-              raise SystemExit("cleanup_admission_pr_number_invalid")
-          for name, value in (("base", pr_base_sha), ("head", pr_head_sha), ("github", github_sha)):
+          if request_id != "issue-42-pr49-cut-0.1.1":
+              raise SystemExit("cleanup_admission_request_mismatch")
+          if pr_number != "49":
+              raise SystemExit("cleanup_admission_pr_number_mismatch")
+          for name, value in (("caller", caller_sha), ("head", expected_head_sha)):
               if re.fullmatch(r"[0-9a-f]{40}", value) is None:
                   raise SystemExit(f"cleanup_admission_{name}_sha_invalid")
-          if pr_base_sha != github_sha:
-              raise SystemExit("cleanup_admission_base_sha_mismatch")
           if not token:
               raise SystemExit("cleanup_admission_token_required")
 
@@ -100,20 +106,19 @@ jobs:
                   raise SystemExit("cleanup_admission_response_invalid") from None
 
           main_ref = get("/git/ref/heads/main")
-          if not isinstance(main_ref, dict) or main_ref.get("object", {}).get("sha") != pr_base_sha:
+          base_sha = main_ref.get("object", {}).get("sha") if isinstance(main_ref, dict) else None
+          if base_sha != caller_sha:
               raise SystemExit("cleanup_admission_main_drifted")
 
           pull = get(f"/pulls/{pr_number}")
           if not isinstance(pull, dict):
               raise SystemExit("cleanup_admission_pull_invalid")
-          expected = {
-              "base": ("main", pr_base_sha),
-              "head": ("orchestrator/issue-42-remove-tag-helper", pr_head_sha),
-          }
-          for side, (expected_ref, expected_sha) in expected.items():
-              row = pull.get(side, {})
-              if row.get("ref") != expected_ref or row.get("sha") != expected_sha:
-                  raise SystemExit(f"cleanup_admission_{side}_identity_mismatch")
+          if pull.get("base", {}).get("ref") != "main" or pull.get("base", {}).get("sha") != base_sha:
+              raise SystemExit("cleanup_admission_base_identity_mismatch")
+          if pull.get("head", {}).get("ref") != "orchestrator/issue-42-remove-tag-helper":
+              raise SystemExit("cleanup_admission_head_ref_mismatch")
+          if pull.get("head", {}).get("sha") != expected_head_sha:
+              raise SystemExit("cleanup_admission_head_sha_mismatch")
           if pull.get("head", {}).get("repo", {}).get("full_name") != repository:
               raise SystemExit("cleanup_admission_head_repository_mismatch")
           if pull.get("user", {}).get("login") != "mimranfaruqi":
@@ -135,15 +140,16 @@ jobs:
               raise SystemExit("cleanup_admission_requires_deletions_only")
 
           evidence = {
-              "base_sha": pr_base_sha,
-              "cleanup_head_sha": pr_head_sha,
+              "base_sha": base_sha,
+              "cleanup_head_sha": expected_head_sha,
               "pr_number": pr_number,
               "removed_files": sorted(expected_files),
+              "request_id": request_id,
           }
           print(json.dumps(evidence, separators=(",", ":"), sort_keys=True))
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"base_sha={pr_base_sha}\n")
-              output.write(f"cleanup_head_sha={pr_head_sha}\n")
+              output.write(f"base_sha={base_sha}\n")
+              output.write(f"cleanup_head_sha={expected_head_sha}\n")
               output.write(f"pr_number={pr_number}\n")
           PY
 
@@ -185,7 +191,7 @@ jobs:
           release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
           token = os.environ["ORGANIZATION_MAINTENANCE_TOKEN"]
 
-          if event_name != "pull_request_target" or repository != "StreamScapeTV/agent-state-dashboard":
+          if event_name != "workflow_dispatch" or repository != "StreamScapeTV/agent-state-dashboard":
               raise SystemExit("release_tag_event_not_trusted")
           for name, value in (
               ("caller", caller_sha),
@@ -197,7 +203,7 @@ jobs:
                   raise SystemExit(f"release_tag_{name}_sha_invalid")
           if caller_sha != admitted_base_sha:
               raise SystemExit("release_tag_base_drifted")
-          if re.fullmatch(r"[1-9][0-9]*", cleanup_pr_number) is None:
+          if cleanup_pr_number != "49":
               raise SystemExit("release_tag_cleanup_pr_invalid")
           if release_tag != "0.1.1":
               raise SystemExit("release_tag_identity_invalid")
@@ -305,6 +311,8 @@ jobs:
           repository = os.environ["GITHUB_REPOSITORY"]
           release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
           token = os.environ["ACTIONS_READ_TOKEN"]
+          if not token:
+              raise SystemExit("actions_read_token_required")
           query = urllib.parse.urlencode({"event": "push", "per_page": "20"})
           url = f"https://api.github.com/repos/{repository}/actions/workflows/release.yml/runs?{query}"
           headers = {
