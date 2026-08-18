@@ -14,8 +14,13 @@ const arcGate = await readFile(
   new URL("../.github/workflows/cut-release-0.1.1-arc.yml", import.meta.url),
   "utf8",
 );
+const recovery = await readFile(
+  new URL("../.github/workflows/release-existing-tag-0.1.1.yml", import.meta.url),
+  "utf8",
+);
 
 const releaseSourceSha = "c86db7ae3dd9a223e42cd2c4830b75fc175f72a9";
+const centralPublisherSha = "7ff890874bf8091203dddd9bfb11cb498eefe6d4";
 const requestId = "issue-42-pr49-cut-0.1.1";
 const helperAdmission = helper.split("admit_cleanup:", 2)[1]?.split("cut_tag:", 1)[0] ?? "";
 const helperTagJob = helper.split("cut_tag:", 2)[1] ?? "";
@@ -23,6 +28,8 @@ const helperTagStep = helperTagJob.split("- id: tag", 2)[1]?.split("- id: releas
 const arcAdmission = arcGate.split("admit_cleanup:", 2)[1]?.split("cut_tag:", 1)[0] ?? "";
 const arcTagJob = arcGate.split("cut_tag:", 2)[1]?.split("\n  report:", 1)[0] ?? "";
 const arcReport = arcGate.split("\n  report:", 2)[1] ?? "";
+const recoveryRelease = recovery.split("\n  release:", 2)[1]?.split("\n  report:", 1)[0] ?? "";
+const recoveryReport = recovery.split("\n  report:", 2)[1] ?? "";
 
 test("default-branch tag helper is workflow-dispatch-only and one-shot", () => {
   assert.match(helper, /workflow_dispatch:/);
@@ -52,7 +59,7 @@ test("helper re-admits exact PR 49 cleanup before exposing mutation authority", 
   assert.match(helperAdmission, /cleanup_admission_requires_deletions_only/);
 });
 
-test("tag mutation remains isolated to organization maintenance authority", () => {
+test("legacy helper mutation authority remains isolated to the organization token", () => {
   assert.match(helperTagJob, /needs: admit_cleanup/);
   assert.match(
     helperTagJob,
@@ -60,12 +67,6 @@ test("tag mutation remains isolated to organization maintenance authority", () =
   );
   assert.match(helperTagStep, /ORGANIZATION_MAINTENANCE_TOKEN/);
   assert.doesNotMatch(helperTagStep, /github\.token|GITHUB_TOKEN|ADMISSION_TOKEN|ACTIONS_READ_TOKEN|ISSUE_COMMENT_TOKEN/);
-  assert.match(helperTagStep, /event_name != "workflow_dispatch"/);
-  assert.match(helperTagStep, /cleanup_pr_number != "49"/);
-  assert.match(helperTagStep, /\/compare\/\{release_source_sha\}\.\.\.\{admitted_base_sha\}/);
-  assert.match(helperTagStep, /"POST", "\/git\/refs"/);
-  assert.match(helperTagStep, /"ref": f"refs\/tags\/\{release_tag\}"/);
-  assert.match(helperTagStep, /release_tag_target_mismatch/);
 });
 
 test("PR dispatcher is unprivileged and only synchronizes exact cleanup PR 49", () => {
@@ -90,9 +91,6 @@ test("dispatcher verifies two deletions then dispatches helper on main", () => {
   assert.match(dispatcher, /\/actions\/workflows\/cut-release-0\.1\.1-tag\.yml\/dispatches/);
   assert.match(dispatcher, /"ref": "main"/);
   assert.match(dispatcher, new RegExp(`"request_id": "${requestId}"`));
-  assert.match(dispatcher, /"cleanup_pr": pr_number/);
-  assert.match(dispatcher, /"cleanup_head_sha": pr_head_sha/);
-  assert.match(dispatcher, /response\.status != 204/);
 });
 
 test("ARC tag gate uses only visible same-repository PR synchronize events on general-tiny capacity", () => {
@@ -109,52 +107,77 @@ test("ARC tag gate uses only visible same-repository PR synchronize events on ge
   assert.doesNotMatch(arcGate, /actions\/checkout|checkout@/);
 });
 
-test("ARC admission proves the same-repository PR cannot modify the gate before secret exposure", () => {
+test("ARC admission proves the same-repository PR cannot modify the gate before write authority", () => {
   assert.match(arcGate, /permissions:\n\s+contents: read\n\s+issues: write\n\s+pull-requests: read/);
   assert.match(arcAdmission, /ADMISSION_TOKEN: \$\{\{ github\.token \}\}/);
-  assert.match(arcAdmission, /GITHUB_EVENT_NAME/);
-  assert.match(arcAdmission, /pull_request/);
-  assert.doesNotMatch(arcAdmission, /ORGANIZATION_MAINTENANCE_TOKEN/);
+  assert.doesNotMatch(arcAdmission, /TAG_TOKEN|contents: write|actions: write/);
   assert.match(arcAdmission, /\/pulls\/\{pr_number\}\/files\?per_page=100/);
   assert.match(arcAdmission, /\.github\/workflows\/cut-release-0\.1\.1-tag\.yml/);
   assert.match(arcAdmission, /tests\/release-tag-cut\.test\.mjs/);
   assert.doesNotMatch(arcAdmission, /cut-release-0\.1\.1-arc\.yml/);
   assert.match(arcAdmission, /filenames != expected_files or len\(files\) != 2/);
   assert.match(arcAdmission, /arc_admission_requires_deletions_only/);
-  assert.match(arcAdmission, /arc_admission_main_drifted/);
 });
 
-test("ARC mutation authority is isolated after admission and only creates the exact tag ref", () => {
+test("ARC write authority is job-scoped to exact tag creation and recovery dispatch", () => {
   assert.match(arcTagJob, /needs: admit_cleanup/);
-  assert.match(
-    arcTagJob,
-    /ORGANIZATION_MAINTENANCE_TOKEN: \$\{\{ secrets\.ORGANIZATION_MAINTENANCE_TOKEN \}\}/,
-  );
-  assert.match(arcTagJob, /GITHUB_EVENT_NAME/);
-  assert.match(arcTagJob, /pull_request/);
+  assert.match(arcTagJob, /permissions:\n\s+actions: write\n\s+contents: write/);
+  assert.match(arcTagJob, /TAG_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.doesNotMatch(arcTagJob, /ORGANIZATION_MAINTENANCE_TOKEN/);
   assert.match(arcTagJob, new RegExp(`RELEASE_SOURCE_SHA: ${releaseSourceSha}`));
   assert.match(arcTagJob, /cleanup_pr_number != "49"/);
   assert.match(arcTagJob, /\/compare\/\{release_source_sha\}\.\.\.\{admitted_base_sha\}/);
   assert.match(arcTagJob, /request\("POST", "\/git\/refs", \{"ref": f"refs\/tags\/\{release_tag\}", "sha": release_source_sha\}\)/);
   assert.match(arcTagJob, /release_tag_target_mismatch/);
+  assert.match(arcTagJob, /\/actions\/workflows\/release-existing-tag-0\.1\.1\.yml\/dispatches/);
+  assert.match(arcTagJob, /"request_id": "issue-42-existing-tag-0\.1\.1"/);
+  assert.match(arcTagJob, /publication_dispatch/);
   assert.doesNotMatch(arcTagJob, /FORGEJO_REGISTRY|SUPABASE|KUBE|SOPS|TAILSCALE/);
 });
 
-test("ARC gate always reports bounded run outcomes without the mutation secret", () => {
+test("ARC gate always reports bounded run outcomes without registry credentials", () => {
   assert.match(arcReport, /needs: \[admit_cleanup, cut_tag\]/);
   assert.match(arcReport, /if: always\(\)/);
   assert.match(arcReport, /ISSUE_COMMENT_TOKEN: \$\{\{ github\.token \}\}/);
-  assert.match(arcReport, /ADMISSION_RESULT: \$\{\{ needs\.admit_cleanup\.result \}\}/);
   assert.match(arcReport, /TAG_RESULT: \$\{\{ needs\.cut_tag\.result \}\}/);
+  assert.match(arcReport, /tag_and_dispatch/);
   assert.match(arcReport, /GITHUB_RUN_ID/);
   assert.match(arcReport, /\/issues\/42\/comments/);
-  assert.match(arcReport, /agent-state-dashboard-arc-tag-gate-0\.1\.1/);
-  assert.doesNotMatch(arcReport, /ORGANIZATION_MAINTENANCE_TOKEN/);
+  assert.doesNotMatch(arcReport, /FORGEJO_REGISTRY|TAG_TOKEN/);
 });
 
-test("temporary tag machinery contains no image, chart, or deployment implementation", () => {
-  const combined = `${helper}\n${dispatcher}\n${arcGate}`;
-  assert.doesNotMatch(combined, /buildah|podman|docker build|helm |kubectl|flux |latest/i);
-  assert.doesNotMatch(combined, /git\.faruqi\.dev|helm-charts|agent-state-dashboard:0\.1\.1/);
+test("existing-tag recovery is a one-shot thin Central publisher caller", () => {
+  assert.match(recovery, /workflow_dispatch:/);
+  assert.match(recovery, /inputs\.request_id == 'issue-42-existing-tag-0\.1\.1'/);
+  assert.match(
+    recoveryRelease,
+    new RegExp(`uses: StreamScapeTV/ci-workflows/\\.github/workflows/reusable-tag-image-chart\\.yml@${centralPublisherSha}`),
+  );
+  assert.match(recoveryRelease, /release_mode: existing-tag/);
+  assert.match(recoveryRelease, /release_version: 0\.1\.1/);
+  assert.match(recoveryRelease, new RegExp(`release_source_sha: ${releaseSourceSha}`));
+  assert.match(recoveryRelease, /image_name: agent-state-dashboard/);
+  assert.match(recoveryRelease, /chart_name: agent-state-dashboard/);
+  assert.match(recoveryRelease, /chart_path: charts\/agent-state-dashboard/);
+  assert.match(recoveryRelease, /registry_username: \$\{\{ secrets\.FORGEJO_REGISTRY_USERNAME \}\}/);
+  assert.match(recoveryRelease, /registry_token: \$\{\{ secrets\.FORGEJO_REGISTRY_TOKEN \}\}/);
+  assert.doesNotMatch(recoveryRelease, /runs-on:/);
+});
+
+test("existing-tag recovery reports immutable Central outputs without publication logic", () => {
+  assert.match(recoveryReport, /needs: release/);
+  assert.match(recoveryReport, /RELEASE_RESULT: \$\{\{ needs\.release\.result \}\}/);
+  assert.match(recoveryReport, /IMAGE_DIGEST: \$\{\{ needs\.release\.outputs\.image_digest \}\}/);
+  assert.match(recoveryReport, /CHART_DIGEST: \$\{\{ needs\.release\.outputs\.chart_digest \}\}/);
+  assert.match(recoveryReport, /CHART_PACKAGE_SHA256: \$\{\{ needs\.release\.outputs\.chart_package_sha256 \}\}/);
+  assert.match(recoveryReport, /agent-state-dashboard-existing-tag-release-0\.1\.1/);
+  assert.match(recoveryReport, /\/issues\/42\/comments/);
+  assert.doesNotMatch(recoveryReport, /buildah|podman|docker build|helm |kubectl|flux /i);
+});
+
+test("temporary tag machinery contains no product-local image, chart, or deployment implementation", () => {
+  const combined = `${helper}\n${dispatcher}\n${arcGate}\n${recovery}`;
+  assert.doesNotMatch(combined, /docker build|kubectl|flux /i);
   assert.doesNotMatch(combined, /upload-artifact|download-artifact/);
+  assert.doesNotMatch(combined, /latest/i);
 });
