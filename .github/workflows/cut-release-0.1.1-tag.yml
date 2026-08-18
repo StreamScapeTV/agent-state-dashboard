@@ -1,11 +1,8 @@
 name: Cut immutable dashboard 0.1.1 tag
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/cut-release-0.1.1-tag.yml
+  issue_comment:
+    types: [created]
 
 permissions:
   actions: read
@@ -19,21 +16,33 @@ concurrency:
 jobs:
   cut_tag:
     name: Cut exact 0.1.1 release tag
-    if: github.repository == 'StreamScapeTV/agent-state-dashboard' && github.ref == 'refs/heads/main'
+    if: >-
+      github.repository == 'StreamScapeTV/agent-state-dashboard' &&
+      github.event_name == 'issue_comment' &&
+      github.event.issue.number == 42 &&
+      github.event.comment.body == '/cut-release-0.1.1' &&
+      github.event.comment.user.login == 'mimranfaruqi' &&
+      !github.event.issue.pull_request
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       RELEASE_TAG: 0.1.1
       RELEASE_SOURCE_SHA: c86db7ae3dd9a223e42cd2c4830b75fc175f72a9
+      TRIGGER_ISSUE_NUMBER: ${{ github.event.issue.number }}
+      TRIGGER_COMMENT_BODY: ${{ github.event.comment.body }}
+      TRIGGER_COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
       ORGANIZATION_MAINTENANCE_TOKEN: ${{ secrets.ORGANIZATION_MAINTENANCE_TOKEN }}
     steps:
-      - name: Require trusted non-recursive tag authority
+      - name: Require exact owner command and non-recursive tag authority
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "${GITHUB_EVENT_NAME}" = push
+          test "${GITHUB_EVENT_NAME}" = issue_comment
           test "${GITHUB_REF}" = refs/heads/main
           test "${GITHUB_REPOSITORY}" = StreamScapeTV/agent-state-dashboard
+          test "${TRIGGER_ISSUE_NUMBER}" = 42
+          test "${TRIGGER_COMMENT_BODY}" = /cut-release-0.1.1
+          test "${TRIGGER_COMMENT_AUTHOR}" = mimranfaruqi
           test -n "${ORGANIZATION_MAINTENANCE_TOKEN}"
 
       - id: tag
@@ -55,14 +64,19 @@ jobs:
           event_name = os.environ["GITHUB_EVENT_NAME"]
           branch_ref = os.environ["GITHUB_REF"]
           caller_sha = os.environ["GITHUB_SHA"]
+          issue_number = os.environ["TRIGGER_ISSUE_NUMBER"]
+          comment_body = os.environ["TRIGGER_COMMENT_BODY"]
+          comment_author = os.environ["TRIGGER_COMMENT_AUTHOR"]
           release_tag = os.environ["RELEASE_TAG"]
           release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
           token = os.environ["ORGANIZATION_MAINTENANCE_TOKEN"]
 
-          if event_name != "push" or branch_ref != "refs/heads/main":
+          if event_name != "issue_comment" or branch_ref != "refs/heads/main":
               raise SystemExit("release_tag_event_not_trusted")
           if repository != "StreamScapeTV/agent-state-dashboard":
               raise SystemExit("release_tag_repository_mismatch")
+          if issue_number != "42" or comment_body != "/cut-release-0.1.1" or comment_author != "mimranfaruqi":
+              raise SystemExit("release_tag_command_not_trusted")
           if re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", release_tag) is None:
               raise SystemExit("release_tag_invalid")
           if re.fullmatch(r"[0-9a-f]{40}", release_source_sha) is None:
