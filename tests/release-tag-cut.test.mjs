@@ -12,14 +12,21 @@ const tagStep = workflow.split("- id: tag", 2)[1]?.split("- id: release", 1)[0] 
 const releaseObserver = workflow.split("- id: release", 2)[1]?.split("- name: Report bounded", 1)[0] ?? "";
 const reporter = workflow.split("- name: Report bounded", 2)[1] ?? "";
 
-test("0.1.1 tag helper is a bounded one-shot main-push source identity operation", () => {
+test("0.1.1 tag helper runs only from the exact owner command on issue 42", () => {
   assert.match(workflow, /name: Cut immutable dashboard 0\.1\.1 tag/);
-  assert.match(workflow, /push:\n\s+branches:\n\s+- main/);
-  assert.match(workflow, /paths:\n\s+- \.github\/workflows\/cut-release-0\.1\.1-tag\.yml/);
+  assert.match(workflow, /issue_comment:\n\s+types: \[created\]/);
+  assert.doesNotMatch(workflow, /\n\s+push:/);
   assert.doesNotMatch(workflow, /workflow_dispatch:/);
   assert.doesNotMatch(workflow, /pull_request:/);
   assert.match(workflow, /github\.repository == 'StreamScapeTV\/agent-state-dashboard'/);
-  assert.match(workflow, /github\.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /github\.event_name == 'issue_comment'/);
+  assert.match(workflow, /github\.event\.issue\.number == 42/);
+  assert.match(workflow, /github\.event\.comment\.body == '\/cut-release-0\.1\.1'/);
+  assert.match(workflow, /github\.event\.comment\.user\.login == 'mimranfaruqi'/);
+  assert.match(workflow, /!github\.event\.issue\.pull_request/);
+  assert.match(workflow, /TRIGGER_ISSUE_NUMBER: \$\{\{ github\.event\.issue\.number \}\}/);
+  assert.match(workflow, /TRIGGER_COMMENT_BODY: \$\{\{ github\.event\.comment\.body \}\}/);
+  assert.match(workflow, /TRIGGER_COMMENT_AUTHOR: \$\{\{ github\.event\.comment\.user\.login \}\}/);
   assert.match(workflow, /RELEASE_TAG: 0\.1\.1/);
   assert.match(workflow, new RegExp(`RELEASE_SOURCE_SHA: ${releaseSourceSha}`));
   assert.match(workflow, /actions: read/);
@@ -33,6 +40,7 @@ test("tag mutation uses only the non-recursive organization mutation credential"
     /ORGANIZATION_MAINTENANCE_TOKEN: \$\{\{ secrets\.ORGANIZATION_MAINTENANCE_TOKEN \}\}/,
   );
   assert.match(tagStep, /ORGANIZATION_MAINTENANCE_TOKEN/);
+  assert.match(tagStep, /release_tag_command_not_trusted/);
   for (const forbidden of [
     /github\.token/,
     /GITHUB_TOKEN/,
