@@ -1,0 +1,98 @@
+name: Publish existing dashboard 0.1.1 release
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Exact one-shot existing-tag publication request
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: agent-state-dashboard-existing-tag-0.1.1
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish exact existing 0.1.1 image and chart
+    if: >-
+      github.repository == 'StreamScapeTV/agent-state-dashboard' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.request_id == 'issue-42-existing-tag-0.1.1'
+    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-tag-image-chart.yml@7ff890874bf8091203dddd9bfb11cb498eefe6d4
+    with:
+      release_mode: existing-tag
+      release_version: 0.1.1
+      release_source_sha: c86db7ae3dd9a223e42cd2c4830b75fc175f72a9
+      image_name: agent-state-dashboard
+      chart_name: agent-state-dashboard
+      chart_path: charts/agent-state-dashboard
+      dockerfile_path: Dockerfile
+      build_context: .
+    secrets:
+      registry_username: ${{ secrets.FORGEJO_REGISTRY_USERNAME }}
+      registry_token: ${{ secrets.FORGEJO_REGISTRY_TOKEN }}
+
+  report:
+    name: Report existing-tag publication evidence
+    needs: release
+    if: always() && github.repository == 'StreamScapeTV/agent-state-dashboard'
+    runs-on: [linux, amd64, general, tiny]
+    timeout-minutes: 5
+    env:
+      ISSUE_COMMENT_TOKEN: ${{ github.token }}
+      RELEASE_RESULT: ${{ needs.release.result }}
+      VERSION: ${{ needs.release.outputs.version }}
+      SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+      IMAGE_REFERENCE: ${{ needs.release.outputs.image_reference }}
+      IMAGE_DIGEST: ${{ needs.release.outputs.image_digest }}
+      CHART_REFERENCE: ${{ needs.release.outputs.chart_reference }}
+      CHART_DIGEST: ${{ needs.release.outputs.chart_digest }}
+      CHART_PACKAGE_SHA256: ${{ needs.release.outputs.chart_package_sha256 }}
+    steps:
+      - name: Post bounded immutable publication result to issue 42
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["ISSUE_COMMENT_TOKEN"]
+          if not token:
+              raise SystemExit("release_report_token_required")
+          marker = "<!-- agent-state-dashboard-existing-tag-release-0.1.1 -->"
+          message = (
+              f"{marker}\nExisting-tag publisher run `{os.environ['GITHUB_RUN_ID']}`: "
+              f"result=`{os.environ['RELEASE_RESULT']}`, version=`{os.environ['VERSION']}`, "
+              f"source=`{os.environ['SOURCE_SHA']}`, image=`{os.environ['IMAGE_REFERENCE']}`, "
+              f"image_digest=`{os.environ['IMAGE_DIGEST']}`, chart=`{os.environ['CHART_REFERENCE']}`, "
+              f"chart_digest=`{os.environ['CHART_DIGEST']}`, "
+              f"chart_package_sha256=`{os.environ['CHART_PACKAGE_SHA256']}`."
+          )
+          body = json.dumps({"body": message}, separators=(",", ":")).encode("utf-8")
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{repository}/issues/42/comments",
+              data=body,
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "Content-Type": "application/json",
+                  "User-Agent": "StreamScapeTV-agent-state-dashboard-release-report",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+              method="POST",
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              if response.status != 201:
+                  raise SystemExit("release_report_comment_not_created")
+          PY
