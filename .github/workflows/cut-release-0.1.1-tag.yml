@@ -1,0 +1,156 @@
+name: Cut immutable dashboard 0.1.1 tag
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/cut-release-0.1.1-tag.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-state-dashboard-cut-release-0.1.1
+  cancel-in-progress: false
+
+jobs:
+  cut_tag:
+    name: Cut exact 0.1.1 release tag
+    if: github.repository == 'StreamScapeTV/agent-state-dashboard' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      RELEASE_TAG: 0.1.1
+      RELEASE_SOURCE_SHA: c86db7ae3dd9a223e42cd2c4830b75fc175f72a9
+      ORGANIZATION_MAINTENANCE_TOKEN: ${{ secrets.ORGANIZATION_MAINTENANCE_TOKEN }}
+    steps:
+      - name: Require trusted non-recursive tag authority
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "${GITHUB_EVENT_NAME}" = push
+          test "${GITHUB_REF}" = refs/heads/main
+          test "${GITHUB_REPOSITORY}" = StreamScapeTV/agent-state-dashboard
+          test -n "${ORGANIZATION_MAINTENANCE_TOKEN}"
+
+      - name: Create and read back exact lightweight release tag
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          event_name = os.environ["GITHUB_EVENT_NAME"]
+          branch_ref = os.environ["GITHUB_REF"]
+          caller_sha = os.environ["GITHUB_SHA"]
+          release_tag = os.environ["RELEASE_TAG"]
+          release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
+          token = os.environ["ORGANIZATION_MAINTENANCE_TOKEN"]
+
+          if event_name != "push" or branch_ref != "refs/heads/main":
+              raise SystemExit("release_tag_event_not_trusted")
+          if repository != "StreamScapeTV/agent-state-dashboard":
+              raise SystemExit("release_tag_repository_mismatch")
+          if re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", release_tag) is None:
+              raise SystemExit("release_tag_invalid")
+          if re.fullmatch(r"[0-9a-f]{40}", release_source_sha) is None:
+              raise SystemExit("release_source_sha_invalid")
+          if re.fullmatch(r"[0-9a-f]{40}", caller_sha) is None:
+              raise SystemExit("caller_sha_invalid")
+          if not token or any(character in token for character in "\x00\r\n"):
+              raise SystemExit("organization_maintenance_token_required")
+
+          api = f"https://api.github.com/repos/{repository}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "User-Agent": "StreamScapeTV-agent-state-dashboard-release-tag",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def request(method: str, path: str, payload: dict[str, str] | None = None, *, missing_ok: bool = False):
+              body = None
+              request_headers = dict(headers)
+              if payload is not None:
+                  body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+                  request_headers["Content-Type"] = "application/json"
+              req = urllib.request.Request(f"{api}{path}", data=body, headers=request_headers, method=method)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      raw = response.read(1_000_001)
+                      if len(raw) > 1_000_000:
+                          raise SystemExit("github_response_too_large")
+                      value = json.loads(raw.decode("utf-8")) if raw else {}
+                      if not isinstance(value, dict):
+                          raise SystemExit("github_response_invalid")
+                      return value
+              except urllib.error.HTTPError as error:
+                  if missing_ok and error.code == 404:
+                      return None
+                  raise SystemExit(f"github_http_{error.code}") from None
+              except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                  raise SystemExit("github_request_failed") from None
+
+          main_ref = request("GET", "/git/ref/heads/main")
+          if main_ref.get("object", {}).get("type") != "commit" or main_ref.get("object", {}).get("sha") != caller_sha:
+              raise SystemExit("main_head_drifted")
+
+          target_commit = request("GET", f"/git/commits/{release_source_sha}")
+          if target_commit.get("sha") != release_source_sha:
+              raise SystemExit("release_source_commit_mismatch")
+
+          comparison = request("GET", f"/compare/{release_source_sha}...{caller_sha}")
+          if comparison.get("status") not in {"ahead", "identical"}:
+              raise SystemExit("release_source_not_ancestor")
+          if comparison.get("merge_base_commit", {}).get("sha") != release_source_sha:
+              raise SystemExit("release_source_merge_base_mismatch")
+
+          encoded_tag = urllib.parse.quote(release_tag, safe="")
+          tag_path = f"/git/ref/tags/{encoded_tag}"
+          existing = request("GET", tag_path, missing_ok=True)
+          action = "verified-existing"
+
+          if existing is None:
+              try:
+                  request(
+                      "POST",
+                      "/git/refs",
+                      {"ref": f"refs/tags/{release_tag}", "sha": release_source_sha},
+                  )
+                  action = "created"
+              except SystemExit as error:
+                  if str(error) != "github_http_422":
+                      raise
+                  action = "verified-raced"
+
+          readback = request("GET", tag_path)
+          ref_object = readback.get("object", {})
+          if ref_object.get("type") != "commit":
+              raise SystemExit("release_tag_not_lightweight_commit")
+          if ref_object.get("sha") != release_source_sha:
+              raise SystemExit("release_tag_target_mismatch")
+
+          print(
+              json.dumps(
+                  {
+                      "action": action,
+                      "repository": repository,
+                      "tag": release_tag,
+                      "ref": f"refs/tags/{release_tag}",
+                      "source_sha": release_source_sha,
+                      "trigger_sha": caller_sha,
+                  },
+                  separators=(",", ":"),
+                  sort_keys=True,
+              )
+          )
+          PY
