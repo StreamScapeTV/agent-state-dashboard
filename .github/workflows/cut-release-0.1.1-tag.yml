@@ -1,8 +1,9 @@
 name: Cut immutable dashboard 0.1.1 tag
 
 on:
-  issue_comment:
-    types: [created]
+  workflow_run:
+    workflows: ["Node validation"]
+    types: [completed]
 
 permissions:
   actions: read
@@ -18,31 +19,39 @@ jobs:
     name: Cut exact 0.1.1 release tag
     if: >-
       github.repository == 'StreamScapeTV/agent-state-dashboard' &&
-      github.event_name == 'issue_comment' &&
-      github.event.issue.number == 42 &&
-      github.event.comment.body == '/cut-release-0.1.1' &&
-      github.event.comment.user.login == 'mimranfaruqi' &&
-      !github.event.issue.pull_request
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.id == 32136685577 &&
+      github.event.workflow_run.name == 'Node validation' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == 'StreamScapeTV/agent-state-dashboard' &&
+      github.event.workflow_run.head_sha == '69bb56cd0083b668a76d20ee32d247700923b41b'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       RELEASE_TAG: 0.1.1
       RELEASE_SOURCE_SHA: c86db7ae3dd9a223e42cd2c4830b75fc175f72a9
-      TRIGGER_ISSUE_NUMBER: ${{ github.event.issue.number }}
-      TRIGGER_COMMENT_BODY: ${{ github.event.comment.body }}
-      TRIGGER_COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+      TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+      TRIGGER_RUN_NAME: ${{ github.event.workflow_run.name }}
+      TRIGGER_RUN_EVENT: ${{ github.event.workflow_run.event }}
+      TRIGGER_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      TRIGGER_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+      TRIGGER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
       ORGANIZATION_MAINTENANCE_TOKEN: ${{ secrets.ORGANIZATION_MAINTENANCE_TOKEN }}
     steps:
-      - name: Require exact owner command and non-recursive tag authority
+      - name: Require exact successful validated run and non-recursive tag authority
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "${GITHUB_EVENT_NAME}" = issue_comment
+          test "${GITHUB_EVENT_NAME}" = workflow_run
           test "${GITHUB_REF}" = refs/heads/main
           test "${GITHUB_REPOSITORY}" = StreamScapeTV/agent-state-dashboard
-          test "${TRIGGER_ISSUE_NUMBER}" = 42
-          test "${TRIGGER_COMMENT_BODY}" = /cut-release-0.1.1
-          test "${TRIGGER_COMMENT_AUTHOR}" = mimranfaruqi
+          test "${TRIGGER_RUN_ID}" = 32136685577
+          test "${TRIGGER_RUN_NAME}" = "Node validation"
+          test "${TRIGGER_RUN_EVENT}" = pull_request
+          test "${TRIGGER_RUN_CONCLUSION}" = success
+          test "${TRIGGER_HEAD_REPOSITORY}" = StreamScapeTV/agent-state-dashboard
+          test "${TRIGGER_HEAD_SHA}" = 69bb56cd0083b668a76d20ee32d247700923b41b
           test -n "${ORGANIZATION_MAINTENANCE_TOKEN}"
 
       - id: tag
@@ -64,19 +73,29 @@ jobs:
           event_name = os.environ["GITHUB_EVENT_NAME"]
           branch_ref = os.environ["GITHUB_REF"]
           caller_sha = os.environ["GITHUB_SHA"]
-          issue_number = os.environ["TRIGGER_ISSUE_NUMBER"]
-          comment_body = os.environ["TRIGGER_COMMENT_BODY"]
-          comment_author = os.environ["TRIGGER_COMMENT_AUTHOR"]
+          trigger_run_id = os.environ["TRIGGER_RUN_ID"]
+          trigger_run_name = os.environ["TRIGGER_RUN_NAME"]
+          trigger_run_event = os.environ["TRIGGER_RUN_EVENT"]
+          trigger_run_conclusion = os.environ["TRIGGER_RUN_CONCLUSION"]
+          trigger_head_repository = os.environ["TRIGGER_HEAD_REPOSITORY"]
+          trigger_head_sha = os.environ["TRIGGER_HEAD_SHA"]
           release_tag = os.environ["RELEASE_TAG"]
           release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
           token = os.environ["ORGANIZATION_MAINTENANCE_TOKEN"]
 
-          if event_name != "issue_comment" or branch_ref != "refs/heads/main":
+          if event_name != "workflow_run" or branch_ref != "refs/heads/main":
               raise SystemExit("release_tag_event_not_trusted")
           if repository != "StreamScapeTV/agent-state-dashboard":
               raise SystemExit("release_tag_repository_mismatch")
-          if issue_number != "42" or comment_body != "/cut-release-0.1.1" or comment_author != "mimranfaruqi":
-              raise SystemExit("release_tag_command_not_trusted")
+          if (
+              trigger_run_id != "32136685577"
+              or trigger_run_name != "Node validation"
+              or trigger_run_event != "pull_request"
+              or trigger_run_conclusion != "success"
+              or trigger_head_repository != "StreamScapeTV/agent-state-dashboard"
+              or trigger_head_sha != "69bb56cd0083b668a76d20ee32d247700923b41b"
+          ):
+              raise SystemExit("release_tag_workflow_run_not_trusted")
           if re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", release_tag) is None:
               raise SystemExit("release_tag_invalid")
           if re.fullmatch(r"[0-9a-f]{40}", release_source_sha) is None:
@@ -163,6 +182,8 @@ jobs:
               "ref": f"refs/tags/{release_tag}",
               "source_sha": release_source_sha,
               "trigger_sha": caller_sha,
+              "validated_run_id": trigger_run_id,
+              "validated_head_sha": trigger_head_sha,
           }
           print(json.dumps(evidence, separators=(",", ":"), sort_keys=True))
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
@@ -285,19 +306,21 @@ jobs:
           if tag_outcome == "success" and release_lookup_outcome == "success" and release_run_id:
               message = (
                   f"{marker}\nRelease tag-cut helper run `{helper_run_id}` verified lightweight tag "
-                  f"`{release_tag}` -> `{release_source_sha}` (`{tag_action}`) and observed "
-                  f"tag-triggered publication run `{release_run_id}`."
+                  f"`{release_tag}` -> `{release_source_sha}` (`{tag_action}`) from validated Node run "
+                  f"`{os.environ['TRIGGER_RUN_ID']}` and observed tag-triggered publication run `{release_run_id}`."
               )
           elif tag_outcome == "success":
               message = (
                   f"{marker}\nRelease tag-cut helper run `{helper_run_id}` verified lightweight tag "
-                  f"`{release_tag}` -> `{release_source_sha}` (`{tag_action}`), but the downstream "
-                  "tag-triggered publication run was not observed within the bounded lookup window."
+                  f"`{release_tag}` -> `{release_source_sha}` (`{tag_action}`) from validated Node run "
+                  f"`{os.environ['TRIGGER_RUN_ID']}`, but the downstream tag-triggered publication run was not "
+                  "observed within the bounded lookup window."
               )
           else:
               message = (
                   f"{marker}\nRelease tag-cut helper run `{helper_run_id}` did not verify tag "
-                  f"`{release_tag}` at `{release_source_sha}`; no producer completion is claimed."
+                  f"`{release_tag}` at `{release_source_sha}` from validated Node run "
+                  f"`{os.environ['TRIGGER_RUN_ID']}`; no producer completion is claimed."
               )
 
           body = json.dumps({"body": message}, separators=(",", ":")).encode("utf-8")
