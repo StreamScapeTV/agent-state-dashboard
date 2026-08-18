@@ -95,8 +95,10 @@ test("dispatcher verifies two deletions then dispatches helper on main", () => {
   assert.match(dispatcher, /response\.status != 204/);
 });
 
-test("ARC tag gate executes only protected cleanup admission on general-tiny capacity", () => {
-  assert.match(arcGate, /pull_request_target:\n\s+types: \[synchronize\]/);
+test("ARC tag gate uses only visible same-repository PR synchronize events on general-tiny capacity", () => {
+  assert.match(arcGate, /pull_request:\n\s+branches:\n\s+- main\n\s+types: \[synchronize\]/);
+  assert.doesNotMatch(arcGate, /pull_request_target:/);
+  assert.match(arcGate, /github\.event_name == 'pull_request'/);
   assert.match(arcGate, /github\.event\.pull_request\.number == 49/);
   assert.match(arcGate, /github\.event\.pull_request\.head\.repo\.full_name == 'StreamScapeTV\/agent-state-dashboard'/);
   assert.match(arcGate, /github\.event\.pull_request\.head\.ref == 'orchestrator\/issue-42-remove-tag-helper'/);
@@ -104,13 +106,19 @@ test("ARC tag gate executes only protected cleanup admission on general-tiny cap
   assert.match(arcGate, /github\.event\.pull_request\.title == '\[#42\] Remove temporary 0\.1\.1 tag helper'/);
   assert.equal((arcGate.match(/runs-on: \[linux, amd64, general, tiny\]/g) ?? []).length, 3);
   assert.doesNotMatch(arcGate, /ubuntu-(?:latest|[0-9.]+)/);
+  assert.doesNotMatch(arcGate, /actions\/checkout|checkout@/);
 });
 
-test("ARC admission is read-only and secret-free", () => {
+test("ARC admission proves the same-repository PR cannot modify the gate before secret exposure", () => {
   assert.match(arcGate, /permissions:\n\s+contents: read\n\s+issues: write\n\s+pull-requests: read/);
   assert.match(arcAdmission, /ADMISSION_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.match(arcAdmission, /GITHUB_EVENT_NAME/);
+  assert.match(arcAdmission, /pull_request/);
   assert.doesNotMatch(arcAdmission, /ORGANIZATION_MAINTENANCE_TOKEN/);
   assert.match(arcAdmission, /\/pulls\/\{pr_number\}\/files\?per_page=100/);
+  assert.match(arcAdmission, /\.github\/workflows\/cut-release-0\.1\.1-tag\.yml/);
+  assert.match(arcAdmission, /tests\/release-tag-cut\.test\.mjs/);
+  assert.doesNotMatch(arcAdmission, /cut-release-0\.1\.1-arc\.yml/);
   assert.match(arcAdmission, /filenames != expected_files or len\(files\) != 2/);
   assert.match(arcAdmission, /arc_admission_requires_deletions_only/);
   assert.match(arcAdmission, /arc_admission_main_drifted/);
@@ -122,6 +130,8 @@ test("ARC mutation authority is isolated after admission and only creates the ex
     arcTagJob,
     /ORGANIZATION_MAINTENANCE_TOKEN: \$\{\{ secrets\.ORGANIZATION_MAINTENANCE_TOKEN \}\}/,
   );
+  assert.match(arcTagJob, /GITHUB_EVENT_NAME/);
+  assert.match(arcTagJob, /pull_request/);
   assert.match(arcTagJob, new RegExp(`RELEASE_SOURCE_SHA: ${releaseSourceSha}`));
   assert.match(arcTagJob, /cleanup_pr_number != "49"/);
   assert.match(arcTagJob, /\/compare\/\{release_source_sha\}\.\.\.\{admitted_base_sha\}/);
