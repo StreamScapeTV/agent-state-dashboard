@@ -21,7 +21,8 @@ const helperAdmission = helper.split("admit_cleanup:", 2)[1]?.split("cut_tag:", 
 const helperTagJob = helper.split("cut_tag:", 2)[1] ?? "";
 const helperTagStep = helperTagJob.split("- id: tag", 2)[1]?.split("- id: release", 1)[0] ?? "";
 const arcAdmission = arcGate.split("admit_cleanup:", 2)[1]?.split("cut_tag:", 1)[0] ?? "";
-const arcTagJob = arcGate.split("cut_tag:", 2)[1] ?? "";
+const arcTagJob = arcGate.split("cut_tag:", 2)[1]?.split("\n  report:", 1)[0] ?? "";
+const arcReport = arcGate.split("\n  report:", 2)[1] ?? "";
 
 test("default-branch tag helper is workflow-dispatch-only and one-shot", () => {
   assert.match(helper, /workflow_dispatch:/);
@@ -101,12 +102,12 @@ test("ARC tag gate executes only protected cleanup admission on general-tiny cap
   assert.match(arcGate, /github\.event\.pull_request\.head\.ref == 'orchestrator\/issue-42-remove-tag-helper'/);
   assert.match(arcGate, /github\.event\.pull_request\.user\.login == 'mimranfaruqi'/);
   assert.match(arcGate, /github\.event\.pull_request\.title == '\[#42\] Remove temporary 0\.1\.1 tag helper'/);
-  assert.equal((arcGate.match(/runs-on: \[linux, amd64, general, tiny\]/g) ?? []).length, 2);
+  assert.equal((arcGate.match(/runs-on: \[linux, amd64, general, tiny\]/g) ?? []).length, 3);
   assert.doesNotMatch(arcGate, /ubuntu-(?:latest|[0-9.]+)/);
 });
 
 test("ARC admission is read-only and secret-free", () => {
-  assert.match(arcGate, /permissions:\n\s+contents: read\n\s+pull-requests: read/);
+  assert.match(arcGate, /permissions:\n\s+contents: read\n\s+issues: write\n\s+pull-requests: read/);
   assert.match(arcAdmission, /ADMISSION_TOKEN: \$\{\{ github\.token \}\}/);
   assert.doesNotMatch(arcAdmission, /ORGANIZATION_MAINTENANCE_TOKEN/);
   assert.match(arcAdmission, /\/pulls\/\{pr_number\}\/files\?per_page=100/);
@@ -127,6 +128,18 @@ test("ARC mutation authority is isolated after admission and only creates the ex
   assert.match(arcTagJob, /request\("POST", "\/git\/refs", \{"ref": f"refs\/tags\/\{release_tag\}", "sha": release_source_sha\}\)/);
   assert.match(arcTagJob, /release_tag_target_mismatch/);
   assert.doesNotMatch(arcTagJob, /FORGEJO_REGISTRY|SUPABASE|KUBE|SOPS|TAILSCALE/);
+});
+
+test("ARC gate always reports bounded run outcomes without the mutation secret", () => {
+  assert.match(arcReport, /needs: \[admit_cleanup, cut_tag\]/);
+  assert.match(arcReport, /if: always\(\)/);
+  assert.match(arcReport, /ISSUE_COMMENT_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.match(arcReport, /ADMISSION_RESULT: \$\{\{ needs\.admit_cleanup\.result \}\}/);
+  assert.match(arcReport, /TAG_RESULT: \$\{\{ needs\.cut_tag\.result \}\}/);
+  assert.match(arcReport, /GITHUB_RUN_ID/);
+  assert.match(arcReport, /\/issues\/42\/comments/);
+  assert.match(arcReport, /agent-state-dashboard-arc-tag-gate-0\.1\.1/);
+  assert.doesNotMatch(arcReport, /ORGANIZATION_MAINTENANCE_TOKEN/);
 });
 
 test("temporary tag machinery contains no image, chart, or deployment implementation", () => {
