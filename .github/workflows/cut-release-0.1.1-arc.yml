@@ -1,7 +1,9 @@
 name: Cut immutable dashboard 0.1.1 tag on ARC
 
 on:
-  pull_request_target:
+  pull_request:
+    branches:
+      - main
     types: [synchronize]
 
 permissions:
@@ -15,10 +17,10 @@ concurrency:
 
 jobs:
   admit_cleanup:
-    name: Admit exact cleanup PR on protected source
+    name: Admit exact cleanup PR on same-repository source
     if: >-
       github.repository == 'StreamScapeTV/agent-state-dashboard' &&
-      github.event_name == 'pull_request_target' &&
+      github.event_name == 'pull_request' &&
       github.event.action == 'synchronize' &&
       github.event.pull_request.number == 49 &&
       github.event.pull_request.base.ref == 'main' &&
@@ -59,7 +61,7 @@ jobs:
           pr_head_sha = os.environ["PR_HEAD_SHA"]
           token = os.environ["ADMISSION_TOKEN"]
 
-          if os.environ["GITHUB_EVENT_NAME"] != "pull_request_target":
+          if os.environ["GITHUB_EVENT_NAME"] != "pull_request":
               raise SystemExit("arc_admission_event_mismatch")
           if repository != "StreamScapeTV/agent-state-dashboard" or pr_number != "49":
               raise SystemExit("arc_admission_identity_mismatch")
@@ -166,7 +168,7 @@ jobs:
           cleanup_pr_number = os.environ["CLEANUP_PR_NUMBER"]
           token = os.environ["ORGANIZATION_MAINTENANCE_TOKEN"]
 
-          if os.environ["GITHUB_EVENT_NAME"] != "pull_request_target" or repository != "StreamScapeTV/agent-state-dashboard":
+          if os.environ["GITHUB_EVENT_NAME"] != "pull_request" or repository != "StreamScapeTV/agent-state-dashboard":
               raise SystemExit("release_tag_event_not_trusted")
           if cleanup_pr_number != "49" or release_tag != "0.1.1":
               raise SystemExit("release_tag_identity_invalid")
