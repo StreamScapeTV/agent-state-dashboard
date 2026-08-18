@@ -8,7 +8,6 @@ on:
       - "*.*.*"
 
 permissions:
-  actions: read
   contents: read
 
 # Release runs are keyed to the immutable release tag. Do not cancel an in-flight
@@ -19,7 +18,7 @@ concurrency:
 
 jobs:
   release:
-    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-tag-image-chart.yml@85b86d260d3212ec1c86433439df598864aa461f
+    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-native-image-chart.yml@7ff890874bf8091203dddd9bfb11cb498eefe6d4
     with:
       image_name: agent-state-dashboard
       chart_name: agent-state-dashboard
