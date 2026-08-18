@@ -2,10 +2,52 @@ name: Node validation
 
 on:
   pull_request:
-    branches: [main]
+    branches:
+      - main
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/**"
+      - ".dockerignore"
+      - ".gitignore"
+      - ".nvmrc"
+      - "Dockerfile"
+      - "app/**"
+      - "charts/agent-state-dashboard/**"
+      - "components/**"
+      - "docker/**"
+      - "lib/**"
+      - "next-env.d.ts"
+      - "next.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - "public/**"
+      - "server/**"
+      - "tests/**"
+      - "tsconfig.json"
+      - "types/**"
   push:
-    branches: [main]
+    branches:
+      - main
+    paths:
+      - ".github/workflows/**"
+      - ".dockerignore"
+      - ".gitignore"
+      - ".nvmrc"
+      - "Dockerfile"
+      - "app/**"
+      - "charts/agent-state-dashboard/**"
+      - "components/**"
+      - "docker/**"
+      - "lib/**"
+      - "next-env.d.ts"
+      - "next.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - "public/**"
+      - "server/**"
+      - "tests/**"
+      - "tsconfig.json"
+      - "types/**"
   workflow_dispatch:
     inputs:
       target_sha:
@@ -17,8 +59,11 @@ permissions:
   contents: read
   pull-requests: read
 
+# Ordinary branch checkpoints may use GitHub-native [skip ci] or [ci skip].
+# Final PR heads and protected-main merges must be non-skipped so required
+# exact-head and post-merge validation can run.
 concurrency:
-  group: node-validation-${{ github.event.pull_request.head.sha || inputs.target_sha || github.sha }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
