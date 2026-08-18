@@ -8,7 +8,9 @@ on:
       - .github/workflows/cut-release-0.1.1-tag.yml
 
 permissions:
+  actions: read
   contents: read
+  issues: write
 
 concurrency:
   group: agent-state-dashboard-cut-release-0.1.1
@@ -34,7 +36,8 @@ jobs:
           test "${GITHUB_REPOSITORY}" = StreamScapeTV/agent-state-dashboard
           test -n "${ORGANIZATION_MAINTENANCE_TOKEN}"
 
-      - name: Create and read back exact lightweight release tag
+      - id: tag
+        name: Create and read back exact lightweight release tag
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -139,18 +142,164 @@ jobs:
           if ref_object.get("sha") != release_source_sha:
               raise SystemExit("release_tag_target_mismatch")
 
-          print(
-              json.dumps(
-                  {
-                      "action": action,
-                      "repository": repository,
-                      "tag": release_tag,
-                      "ref": f"refs/tags/{release_tag}",
-                      "source_sha": release_source_sha,
-                      "trigger_sha": caller_sha,
-                  },
-                  separators=(",", ":"),
-                  sort_keys=True,
+          evidence = {
+              "action": action,
+              "repository": repository,
+              "tag": release_tag,
+              "ref": f"refs/tags/{release_tag}",
+              "source_sha": release_source_sha,
+              "trigger_sha": caller_sha,
+          }
+          print(json.dumps(evidence, separators=(",", ":"), sort_keys=True))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"action={action}\n")
+              output.write(f"tag={release_tag}\n")
+              output.write(f"source_sha={release_source_sha}\n")
+          PY
+
+      - id: release
+        name: Locate tag-triggered publication run
+        shell: bash
+        env:
+          ACTIONS_READ_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
+          release_tag = os.environ["RELEASE_TAG"]
+          token = os.environ["ACTIONS_READ_TOKEN"]
+          if not token:
+              raise SystemExit("actions_read_token_required")
+
+          query = urllib.parse.urlencode({"event": "push", "per_page": "20"})
+          url = f"https://api.github.com/repos/{repository}/actions/workflows/release.yml/runs?{query}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "User-Agent": "StreamScapeTV-agent-state-dashboard-release-observer",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          observed = None
+          for attempt in range(30):
+              req = urllib.request.Request(url, headers=headers, method="GET")
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      payload = json.load(response)
+              except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError):
+                  payload = {}
+              runs = payload.get("workflow_runs", []) if isinstance(payload, dict) else []
+              observed = next(
+                  (
+                      run
+                      for run in runs
+                      if isinstance(run, dict)
+                      and run.get("event") == "push"
+                      and run.get("head_sha") == release_source_sha
+                      and run.get("name") == "Publish tagged dashboard image and chart"
+                  ),
+                  None,
               )
+              if observed is not None:
+                  break
+              if attempt < 29:
+                  time.sleep(2)
+
+          if observed is None:
+              raise SystemExit("release_run_not_observed")
+
+          run_id = observed.get("id")
+          if not isinstance(run_id, int) or run_id <= 0:
+              raise SystemExit("release_run_id_invalid")
+          run_url = observed.get("html_url")
+          if not isinstance(run_url, str) or not run_url.startswith(f"https://github.com/{repository}/actions/runs/"):
+              raise SystemExit("release_run_url_invalid")
+
+          evidence = {
+              "release_run_id": run_id,
+              "release_run_status": observed.get("status"),
+              "release_run_conclusion": observed.get("conclusion"),
+              "release_source_sha": release_source_sha,
+              "release_tag": release_tag,
+          }
+          print(json.dumps(evidence, separators=(",", ":"), sort_keys=True))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"run_id={run_id}\n")
+              output.write(f"run_url={run_url}\n")
+          PY
+
+      - name: Report bounded tag-cut evidence to issue 42
+        if: always()
+        continue-on-error: true
+        shell: bash
+        env:
+          ISSUE_COMMENT_TOKEN: ${{ github.token }}
+          TAG_OUTCOME: ${{ steps.tag.outcome }}
+          TAG_ACTION: ${{ steps.tag.outputs.action }}
+          RELEASE_LOOKUP_OUTCOME: ${{ steps.release.outcome }}
+          RELEASE_RUN_ID: ${{ steps.release.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          helper_run_id = os.environ["GITHUB_RUN_ID"]
+          release_tag = os.environ["RELEASE_TAG"]
+          release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
+          tag_outcome = os.environ.get("TAG_OUTCOME", "")
+          tag_action = os.environ.get("TAG_ACTION", "")
+          release_lookup_outcome = os.environ.get("RELEASE_LOOKUP_OUTCOME", "")
+          release_run_id = os.environ.get("RELEASE_RUN_ID", "")
+          token = os.environ["ISSUE_COMMENT_TOKEN"]
+
+          marker = "<!-- agent-state-dashboard-release-tag-cut-0.1.1 -->"
+          if tag_outcome == "success" and release_lookup_outcome == "success" and release_run_id:
+              message = (
+                  f"{marker}\nRelease tag-cut helper run `{helper_run_id}` verified lightweight tag "
+                  f"`{release_tag}` -> `{release_source_sha}` (`{tag_action}`) and observed "
+                  f"tag-triggered publication run `{release_run_id}`."
+              )
+          elif tag_outcome == "success":
+              message = (
+                  f"{marker}\nRelease tag-cut helper run `{helper_run_id}` verified lightweight tag "
+                  f"`{release_tag}` -> `{release_source_sha}` (`{tag_action}`), but the downstream "
+                  "tag-triggered publication run was not observed within the bounded lookup window."
+              )
+          else:
+              message = (
+                  f"{marker}\nRelease tag-cut helper run `{helper_run_id}` did not verify tag "
+                  f"`{release_tag}` at `{release_source_sha}`; no producer completion is claimed."
+              )
+
+          body = json.dumps({"body": message}, separators=(",", ":")).encode("utf-8")
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{repository}/issues/42/comments",
+              data=body,
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "Content-Type": "application/json",
+                  "User-Agent": "StreamScapeTV-agent-state-dashboard-release-reporter",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+              method="POST",
           )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              if response.status != 201:
+                  raise SystemExit("issue_comment_not_created")
           PY
