@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   release:
-    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-native-image-chart.yml@1eb1f28566c16ae296c448ff856d5b258283c7e6
+    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-native-image-chart.yml@7ff890874bf8091203dddd9bfb11cb498eefe6d4
     with:
       image_name: agent-state-dashboard
       chart_name: agent-state-dashboard
