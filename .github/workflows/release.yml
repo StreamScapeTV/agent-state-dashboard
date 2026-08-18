@@ -1,49 +1,31 @@
 name: Publish tagged dashboard image and chart
 
-run-name: >-
-  ${{ github.event_name == 'workflow_dispatch'
-      && format('Recover dashboard release {0}', inputs.release_version)
-      || format('Publish tagged dashboard release {0}', github.ref_name) }}
+run-name: Publish tagged dashboard release ${{ github.ref_name }}
 
 on:
   push:
     tags:
-      - "*"
-  workflow_dispatch:
-    inputs:
-      release_version:
-        description: Existing canonical SemVer tag to recover without retagging
-        required: true
-        type: string
-      release_source_sha:
-        description: Exact 40-character commit the existing tag must resolve to
-        required: true
-        type: string
+      - "*.*.*"
 
 permissions:
   actions: read
   contents: read
 
+# Release runs are keyed to the immutable release tag. Do not cancel an in-flight
+# publication for the same version; the central publisher remains idempotent.
 concurrency:
-  group: >-
-    agent-state-dashboard-release-${{ github.event_name == 'workflow_dispatch'
-      && inputs.release_version
-      || github.ref_name }}
+  group: agent-state-dashboard-release-${{ github.ref_name }}
   cancel-in-progress: false
 
-# This branch checkpoint intentionally stops after exact source admission.
-# ci-workflows#266 must first register the fixed dashboard OCI and Helm product
-# identities. Once that contract is merged, this repository-owned workflow will
-# pin its immutable central revision and add the generic oci.build/oci.publish
-# and helm.validate/helm.publish jobs. Keeping publication absent here prevents
-# the pre-override 0.1.0 source from being republished accidentally while #31
-# and #32 migrate the runtime to pure NGINX.
 jobs:
-  source:
-    name: Resolve exact dashboard release source
-    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-resolve-source.yml@783a3581bc67389cd42e100e44d5945288b862a4
+  release:
+    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-tag-image-chart.yml@85b86d260d3212ec1c86433439df598864aa461f
     with:
-      source_mode: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'tag' }}
-      requested_sha: ${{ github.event_name == 'workflow_dispatch' && inputs.release_source_sha || '' }}
-      expected_branch: main
-      release_contract: dashboard-release
+      image_name: agent-state-dashboard
+      chart_name: agent-state-dashboard
+      chart_path: charts/agent-state-dashboard
+      dockerfile_path: Dockerfile
+      build_context: .
+    secrets:
+      registry_username: ${{ secrets.FORGEJO_REGISTRY_USERNAME }}
+      registry_token: ${{ secrets.FORGEJO_REGISTRY_TOKEN }}

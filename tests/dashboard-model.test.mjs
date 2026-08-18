@@ -287,20 +287,21 @@ test("project summaries preserve returned attention counts and current project f
   assert.equal(summary.nextAction, "Merge");
 });
 
-test("client source contract delegates live transitions, isolates duration ticks and keeps live details/raw pagination/accessibility wired", () => {
+test("client source contract uses Supabase proxy transport while preserving duration, detail, raw pagination and accessibility wiring", () => {
   const source = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
 
-  assert.match(source, /liveEventDecision\(kind, payload\)/);
-  assert.match(source, /const refreshFromEvent = \(\) => applyLiveEvent\("refresh"\)/);
-  assert.match(source, /const invalidateFromEvent = \(\) => applyLiveEvent\("invalidate"\)/);
-  assert.match(source, /applyLiveEvent\("status", event\.data\)/);
-  assert.match(source, /events\.onopen = \(\) => applyLiveEvent\("open"\)/);
-  assert.match(source, /events\.onerror = \(\) => applyLiveEvent\("error"\)/);
-  assert.match(source, /const baseRows = useMemo\(\(\) => snapshot \? buildAgentRows\(snapshot, 0\) : \[\], \[snapshot\]\)/);
+  assert.match(source, /readDashboardSnapshot\(client, \{ signal: controller\.signal \}\)/);
+  assert.match(source, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
+  assert.match(source, /subscribeToDashboardChanges\(client, \{/);
+  assert.match(source, /applyLiveEvent\("status", \{ status: status === "connecting" \? "starting" : status \}\)/);
+  assert.match(source, /onInvalidate: \(\) => applyLiveEvent\("invalidate"\)/);
+  assert.match(source, /window\.setInterval\(requestRefresh, POLL_INTERVAL_MS\)/);
+  assert.match(source, /const baseRows = useMemo\(\(\) => \(snapshot \? buildAgentRows\(snapshot, 0\) : \[\]\), \[snapshot\]\)/);
   assert.match(source, /refreshAgentDurations\(baseRows, nowMs\)/);
   assert.match(source, /const \[selectedAgentKey, setSelectedAgentKey\] = useState<string \| null>\(null\)/);
   assert.match(source, /rows\.find\(\(row\) => row\.key === selectedAgentKey\)/);
-  assert.match(source, /!baseRows\.some\(\(row\) => row\.key === selectedAgentKey\)\) setSelectedAgentKey\(null\)/);
+  assert.match(source, /!baseRows\.some\(\(row\) => row\.key === selectedAgentKey\)/);
+  assert.match(source, /setSelectedAgentKey\(null\)/);
   assert.match(source, /onClick=\{\(\) => onView\(row\.key\)\}/);
   assert.match(source, /onView=\{setSelectedAgentKey\}/);
   assert.match(source, /rows\.slice\(page \* rowsPerPage, page \* rowsPerPage \+ rowsPerPage\)/);
