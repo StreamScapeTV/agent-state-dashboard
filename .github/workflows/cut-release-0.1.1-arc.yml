@@ -134,8 +134,11 @@ jobs:
           PY
 
   cut_tag:
-    name: Create and read back exact 0.1.1 tag
+    name: Create exact 0.1.1 tag and dispatch existing-tag publication
     needs: admit_cleanup
+    permissions:
+      actions: write
+      contents: write
     runs-on: [linux, amd64, general, tiny]
     timeout-minutes: 10
     env:
@@ -144,9 +147,9 @@ jobs:
       ADMITTED_BASE_SHA: ${{ needs.admit_cleanup.outputs.base_sha }}
       CLEANUP_HEAD_SHA: ${{ needs.admit_cleanup.outputs.cleanup_head_sha }}
       CLEANUP_PR_NUMBER: ${{ needs.admit_cleanup.outputs.pr_number }}
-      ORGANIZATION_MAINTENANCE_TOKEN: ${{ secrets.ORGANIZATION_MAINTENANCE_TOKEN }}
+      TAG_TOKEN: ${{ github.token }}
     steps:
-      - name: Create or verify exact lightweight tag
+      - name: Create/read back exact tag and dispatch trusted existing-tag publisher
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -166,7 +169,7 @@ jobs:
           admitted_base_sha = os.environ["ADMITTED_BASE_SHA"]
           cleanup_head_sha = os.environ["CLEANUP_HEAD_SHA"]
           cleanup_pr_number = os.environ["CLEANUP_PR_NUMBER"]
-          token = os.environ["ORGANIZATION_MAINTENANCE_TOKEN"]
+          token = os.environ["TAG_TOKEN"]
 
           if os.environ["GITHUB_EVENT_NAME"] != "pull_request" or repository != "StreamScapeTV/agent-state-dashboard":
               raise SystemExit("release_tag_event_not_trusted")
@@ -176,7 +179,7 @@ jobs:
               if re.fullmatch(r"[0-9a-f]{40}", value) is None:
                   raise SystemExit(f"release_tag_{name}_sha_invalid")
           if not token or any(character in token for character in "\x00\r\n"):
-              raise SystemExit("organization_maintenance_token_required")
+              raise SystemExit("tag_token_required")
 
           api = f"https://api.github.com/repos/{repository}"
           headers = {
@@ -186,7 +189,7 @@ jobs:
               "X-GitHub-Api-Version": "2022-11-28",
           }
 
-          def request(method: str, path: str, payload: dict[str, str] | None = None, *, missing_ok: bool = False):
+          def request(method: str, path: str, payload: dict[str, object] | None = None, *, missing_ok: bool = False):
               body = None
               request_headers = dict(headers)
               if payload is not None:
@@ -204,8 +207,10 @@ jobs:
                   raise SystemExit("github_request_failed") from None
               if len(raw) > 1_000_000:
                   raise SystemExit("github_response_too_large")
+              if not raw:
+                  return {}
               try:
-                  value = json.loads(raw.decode("utf-8")) if raw else {}
+                  value = json.loads(raw.decode("utf-8"))
               except (UnicodeDecodeError, json.JSONDecodeError):
                   raise SystemExit("github_response_invalid") from None
               if not isinstance(value, dict):
@@ -236,7 +241,25 @@ jobs:
           if ref_object.get("type") != "commit" or ref_object.get("sha") != release_source_sha:
               raise SystemExit("release_tag_target_mismatch")
 
-          print(json.dumps({"action": action, "cleanup_head_sha": cleanup_head_sha, "ref": f"refs/tags/{release_tag}", "source_sha": release_source_sha}, separators=(",", ":"), sort_keys=True))
+          request(
+              "POST",
+              "/actions/workflows/release-existing-tag-0.1.1.yml/dispatches",
+              {"ref": "main", "inputs": {"request_id": "issue-42-existing-tag-0.1.1"}},
+          )
+
+          print(
+              json.dumps(
+                  {
+                      "action": action,
+                      "cleanup_head_sha": cleanup_head_sha,
+                      "publication_dispatch": "created",
+                      "ref": f"refs/tags/{release_tag}",
+                      "source_sha": release_source_sha,
+                  },
+                  separators=(",", ":"),
+                  sort_keys=True,
+              )
+          )
           PY
 
   report:
@@ -271,7 +294,7 @@ jobs:
           message = (
               f"{marker}\nARC tag-gate run `{os.environ['GITHUB_RUN_ID']}` for cleanup head "
               f"`{os.environ['CLEANUP_HEAD_SHA']}` on base `{os.environ['BASE_SHA']}`: "
-              f"admission=`{os.environ['ADMISSION_RESULT']}`, tag=`{os.environ['TAG_RESULT']}`."
+              f"admission=`{os.environ['ADMISSION_RESULT']}`, tag_and_dispatch=`{os.environ['TAG_RESULT']}`."
           )
           body = json.dumps({"body": message}, separators=(",", ":")).encode("utf-8")
           request = urllib.request.Request(
