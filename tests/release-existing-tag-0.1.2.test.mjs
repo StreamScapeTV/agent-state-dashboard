@@ -50,14 +50,32 @@ test("publisher reports immutable image and chart evidence and fails closed", ()
   assert.doesNotMatch(publisher, /upload-artifact/);
 });
 
-test("dispatcher accepts only the exact owner command on issue 55", () => {
-  assert.match(dispatcher, /^\s*issue_comment:\s*$/m);
-  assert.match(dispatcher, /github\.event\.issue\.number == 55/);
-  assert.match(dispatcher, /github\.actor == 'mimranfaruqi'/);
-  assert.match(dispatcher, /github\.event\.comment\.user\.login == 'mimranfaruqi'/);
-  assert.match(dispatcher, /github\.event\.comment\.body == '\/publish-existing-0\.1\.2-native'/);
+test("dispatcher uses only the exact synchronized cleanup PR as recovery trigger", () => {
+  assert.match(dispatcher, /^\s*pull_request:\s*$/m);
+  assert.match(dispatcher, /^\s*types:\s*\[synchronize\]\s*$/m);
+  assert.match(dispatcher, /github\.event_name == 'pull_request'/);
+  assert.match(dispatcher, /github\.event\.action == 'synchronize'/);
+  assert.match(dispatcher, /github\.event\.pull_request\.number == 59/);
+  assert.match(dispatcher, /github\.event\.pull_request\.base\.ref == 'main'/);
+  assert.match(dispatcher, /github\.event\.pull_request\.head\.ref == 'orchestrator\/issue-55-retire-release-helpers'/);
+  assert.match(dispatcher, /github\.event\.pull_request\.head\.repo\.full_name == 'StreamScapeTV\/agent-state-dashboard'/);
+  assert.match(dispatcher, /github\.event\.pull_request\.user\.login == 'mimranfaruqi'/);
+  assert.match(dispatcher, /github\.event\.pull_request\.title == '\[#55\] Retire temporary release helpers after 0\.1\.2'/);
+  assert.match(dispatcher, /github\.event\.pull_request\.draft == false/);
+  assert.doesNotMatch(dispatcher, /^\s*issue_comment:\s*$/m);
   assert.match(dispatcher, /^\s*actions:\s*write\s*$/m);
   assert.match(dispatcher, /^\s*issues:\s*write\s*$/m);
+  assert.match(dispatcher, /^\s*pull-requests:\s*read\s*$/m);
+});
+
+test("dispatcher revalidates the exact open cleanup PR through GitHub before publication", () => {
+  assert.match(dispatcher, /request\("GET", "\/pulls\/59"\)/);
+  assert.match(dispatcher, /native_dispatch_trigger_pr_not_open/);
+  assert.match(dispatcher, /native_dispatch_trigger_pr_base_mismatch/);
+  assert.match(dispatcher, /native_dispatch_trigger_pr_head_mismatch/);
+  assert.match(dispatcher, /native_dispatch_trigger_pr_author_mismatch/);
+  assert.match(dispatcher, /native_dispatch_trigger_pr_title_mismatch/);
+  assert.match(dispatcher, /EXPECTED_TRIGGER_HEAD/);
 });
 
 test("dispatcher requires green zero-artifact protected main before recovery dispatch", () => {
