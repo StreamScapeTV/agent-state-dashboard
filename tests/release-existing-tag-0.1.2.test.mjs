@@ -91,6 +91,16 @@ test("dispatcher requires green zero-artifact protected main before recovery dis
   assert.match(dispatcher, /native_dispatch_main_validation_missing/);
 });
 
+test("dispatcher reports only bounded non-secret GitHub rejection details", () => {
+  assert.match(dispatcher, /error\.read\(8_193\)/);
+  assert.match(dispatcher, /error_response_too_large/);
+  assert.match(dispatcher, /raw_message\.replace\("\\r", " "\)\.replace\("\\n", " "\)\[:500\]/);
+  assert.match(dispatcher, /raw_errors\[:5\]/);
+  assert.match(dispatcher, /"message": message, "errors": error_codes/);
+  assert.match(dispatcher, /native_dispatch_github_http_/);
+  assert.doesNotMatch(dispatcher, /error\.headers|request_headers.*SystemExit|Authorization.*SystemExit/);
+});
+
 test("dispatcher verifies the immutable tag and only dispatches the bounded publisher", () => {
   assert.match(dispatcher, new RegExp(sourceSha));
   assert.match(dispatcher, /\/git\/ref\/tags\/0\.1\.2/);
