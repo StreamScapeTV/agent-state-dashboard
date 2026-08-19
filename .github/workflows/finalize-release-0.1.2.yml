@@ -1,7 +1,7 @@
 name: Finalize dashboard 0.1.2 release
 
 on:
-  pull_request_target:
+  pull_request:
     branches:
       - main
     types: [opened, synchronize, reopened, ready_for_review]
@@ -18,10 +18,10 @@ concurrency:
 
 jobs:
   finalize_release:
-    name: Publish 0.1.2 and verify final cleanup
+    name: Publish 0.1.2 and verify both cleanup phases
     if: >-
       github.repository == 'StreamScapeTV/agent-state-dashboard' &&
-      github.event_name == 'pull_request_target' &&
+      github.event_name == 'pull_request' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.repo.full_name == 'StreamScapeTV/agent-state-dashboard' &&
       github.event.pull_request.head.ref == 'orchestrator/issue-55-retire-release-helpers' &&
@@ -29,14 +29,16 @@ jobs:
       github.event.pull_request.title == '[#55] Retire temporary release helpers after 0.1.2' &&
       github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     env:
       RELEASE_TAG: 0.1.2
       RELEASE_SOURCE_SHA: 3187db893f5629d8703897a83245df46b62b6f7d
       ADMISSION_TOKEN: ${{ github.token }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PHASE1_PR_NUMBER: ${{ github.event.pull_request.number }}
+      PHASE1_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PHASE1_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PHASE2_HEAD_REF: orchestrator/issue-55-retire-finalizer
+      PHASE2_TITLE: '[#55] Remove final 0.1.2 release finalizer'
     steps:
       - name: Report finalizer start to issue 55
         continue-on-error: true
@@ -52,9 +54,9 @@ jobs:
 
           body = (
               "<!-- agent-state-dashboard-finalize-release-0.1.2-start -->\n"
-              f"Finalizer run `{os.environ['GITHUB_RUN_ID']}` started for cleanup PR "
-              f"`#{os.environ['PR_NUMBER']}` with base `{os.environ['PR_BASE_SHA']}` and "
-              f"head `{os.environ['PR_HEAD_SHA']}`."
+              f"Finalizer run `{os.environ['GITHUB_RUN_ID']}` started for phase-1 cleanup PR "
+              f"`#{os.environ['PHASE1_PR_NUMBER']}` with base `{os.environ['PHASE1_BASE_SHA']}` "
+              f"and head `{os.environ['PHASE1_HEAD_SHA']}`."
           )
           payload = json.dumps({"body": body}, separators=(",", ":")).encode("utf-8")
           request = urllib.request.Request(
@@ -75,7 +77,7 @@ jobs:
           PY
 
       - id: admit
-        name: Admit exact cleanup and release authority
+        name: Admit phase-1 cleanup and exact release authority
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -94,26 +96,18 @@ jobs:
           repository = os.environ["GITHUB_REPOSITORY"]
           release_tag = os.environ["RELEASE_TAG"]
           release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
-          pr_number = os.environ["PR_NUMBER"]
-          pr_base_sha = os.environ["PR_BASE_SHA"]
-          pr_head_sha = os.environ["PR_HEAD_SHA"]
-          caller_sha = os.environ["GITHUB_SHA"]
+          pr_number = os.environ["PHASE1_PR_NUMBER"]
+          pr_base_sha = os.environ["PHASE1_BASE_SHA"]
+          pr_head_sha = os.environ["PHASE1_HEAD_SHA"]
           token = os.environ["ADMISSION_TOKEN"]
 
-          if repository != "StreamScapeTV/agent-state-dashboard" or os.environ["GITHUB_EVENT_NAME"] != "pull_request_target":
+          if repository != "StreamScapeTV/agent-state-dashboard" or os.environ["GITHUB_EVENT_NAME"] != "pull_request":
               raise SystemExit("finalizer_event_not_trusted")
           if release_tag != "0.1.2":
               raise SystemExit("finalizer_release_tag_mismatch")
-          for name, value in (
-              ("release_source", release_source_sha),
-              ("pr_base", pr_base_sha),
-              ("pr_head", pr_head_sha),
-              ("caller", caller_sha),
-          ):
+          for name, value in (("release_source", release_source_sha), ("pr_base", pr_base_sha), ("pr_head", pr_head_sha)):
               if re.fullmatch(r"[0-9a-f]{40}", value) is None:
                   raise SystemExit(f"finalizer_{name}_sha_invalid")
-          if caller_sha != pr_base_sha:
-              raise SystemExit("finalizer_caller_base_mismatch")
           if not pr_number.isdigit() or int(pr_number) <= 0:
               raise SystemExit("finalizer_pr_number_invalid")
           if not token:
@@ -147,45 +141,39 @@ jobs:
 
           main_ref = request("GET", "/git/ref/heads/main")
           if not isinstance(main_ref, dict) or main_ref.get("object", {}).get("sha") != pr_base_sha:
-              raise SystemExit("finalizer_main_drifted_from_pr_base")
+              raise SystemExit("finalizer_main_drifted_from_phase1_base")
 
           pull = request("GET", f"/pulls/{pr_number}")
-          if not isinstance(pull, dict):
-              raise SystemExit("finalizer_pull_invalid")
-          if pull.get("state") != "open" or pull.get("draft") is not False:
-              raise SystemExit("finalizer_pull_not_merge_candidate")
+          if not isinstance(pull, dict) or pull.get("state") != "open" or pull.get("draft") is not False:
+              raise SystemExit("finalizer_phase1_not_merge_candidate")
           if pull.get("base", {}).get("ref") != "main" or pull.get("base", {}).get("sha") != pr_base_sha:
-              raise SystemExit("finalizer_pull_base_mismatch")
-          if pull.get("head", {}).get("ref") != "orchestrator/issue-55-retire-release-helpers":
-              raise SystemExit("finalizer_pull_head_ref_mismatch")
-          if pull.get("head", {}).get("sha") != pr_head_sha:
-              raise SystemExit("finalizer_pull_head_sha_mismatch")
+              raise SystemExit("finalizer_phase1_base_mismatch")
+          if pull.get("head", {}).get("ref") != "orchestrator/issue-55-retire-release-helpers" or pull.get("head", {}).get("sha") != pr_head_sha:
+              raise SystemExit("finalizer_phase1_head_mismatch")
           if pull.get("head", {}).get("repo", {}).get("full_name") != repository:
-              raise SystemExit("finalizer_pull_head_repository_mismatch")
+              raise SystemExit("finalizer_phase1_head_repository_mismatch")
           if pull.get("user", {}).get("login") != "mimranfaruqi":
-              raise SystemExit("finalizer_pull_author_mismatch")
+              raise SystemExit("finalizer_phase1_author_mismatch")
           if pull.get("title") != "[#55] Retire temporary release helpers after 0.1.2":
-              raise SystemExit("finalizer_pull_title_mismatch")
+              raise SystemExit("finalizer_phase1_title_mismatch")
 
           files = request("GET", f"/pulls/{pr_number}/files?per_page=100")
           if not isinstance(files, list):
-              raise SystemExit("finalizer_pull_files_invalid")
+              raise SystemExit("finalizer_phase1_files_invalid")
           expected_files = {
               ".github/workflows/cut-release-0.1.1-arc.yml",
               ".github/workflows/cut-release-0.1.1-pr.yml",
               ".github/workflows/cut-release-0.1.1-tag.yml",
               ".github/workflows/release-existing-tag-0.1.1.yml",
               ".github/workflows/cut-release-0.1.2.yml",
-              ".github/workflows/finalize-release-0.1.2.yml",
               "tests/release-tag-cut.test.mjs",
               "tests/release-0.1.2-cut.test.mjs",
-              "tests/finalize-release-0.1.2.test.mjs",
           }
           filenames = {row.get("filename") for row in files if isinstance(row, dict)}
           if filenames != expected_files or len(files) != len(expected_files):
-              raise SystemExit("finalizer_cleanup_file_set_mismatch")
+              raise SystemExit("finalizer_phase1_file_set_mismatch")
           if any(row.get("status") != "removed" for row in files if isinstance(row, dict)):
-              raise SystemExit("finalizer_cleanup_requires_deletions_only")
+              raise SystemExit("finalizer_phase1_requires_deletions_only")
 
           source_commit = request("GET", f"/git/commits/{release_source_sha}")
           if not isinstance(source_commit, dict) or source_commit.get("sha") != release_source_sha:
@@ -218,30 +206,27 @@ jobs:
           if re.search(r"^appVersion:\s*[\"']?0\.1\.2[\"']?\s*$", chart, re.MULTILINE) is None:
               raise SystemExit("finalizer_chart_app_version_mismatch")
 
-          def successful_main_validation(sha: str, *, attempts: int = 90) -> int:
+          def successful_validation(sha: str, event: str, expected_branch: str, *, attempts: int = 90) -> int:
               last_completed = None
               for attempt in range(attempts):
-                  query = urllib.parse.urlencode(
-                      {"event": "push", "status": "completed", "head_sha": sha, "per_page": "20"}
-                  )
+                  query = urllib.parse.urlencode({"event": event, "status": "completed", "head_sha": sha, "per_page": "20"})
                   payload = request("GET", f"/actions/workflows/validation.yml/runs?{query}")
                   runs = payload.get("workflow_runs", []) if isinstance(payload, dict) else []
                   completed = [
                       run
                       for run in runs
                       if isinstance(run, dict)
-                      and run.get("event") == "push"
+                      and run.get("event") == event
                       and run.get("head_sha") == sha
-                      and run.get("head_branch") == "main"
+                      and run.get("head_branch") == expected_branch
                       and run.get("name") == "Node validation"
                       and run.get("status") == "completed"
                       and isinstance(run.get("id"), int)
                   ]
                   if completed:
-                      run = max(completed, key=lambda item: item["id"])
-                      last_completed = run
-                      if run.get("conclusion") == "success":
-                          run_id = run["id"]
+                      last_completed = max(completed, key=lambda item: item["id"])
+                      if last_completed.get("conclusion") == "success":
+                          run_id = last_completed["id"]
                           artifacts = request("GET", f"/actions/runs/{run_id}/artifacts?per_page=100")
                           if not isinstance(artifacts, dict) or artifacts.get("total_count") != 0:
                               raise SystemExit("finalizer_validation_artifacts_present")
@@ -249,13 +234,11 @@ jobs:
                   if attempt < attempts - 1:
                       time.sleep(2)
               if last_completed is not None:
-                  raise SystemExit(
-                      f"finalizer_main_validation_not_green:{last_completed.get('id')}:{last_completed.get('conclusion')}"
-                  )
-              raise SystemExit("finalizer_main_validation_missing")
+                  raise SystemExit(f"finalizer_validation_not_green:{last_completed.get('id')}:{last_completed.get('conclusion')}")
+              raise SystemExit("finalizer_validation_missing")
 
-          source_validation_run = successful_main_validation(release_source_sha)
-          base_validation_run = successful_main_validation(pr_base_sha)
+          source_validation_run = successful_validation(release_source_sha, "push", "main")
+          base_validation_run = successful_validation(pr_base_sha, "push", "main")
 
           encoded_tag = urllib.parse.quote(release_tag, safe="")
           existing = request("GET", f"/git/ref/tags/{encoded_tag}", missing_ok=True)
@@ -270,7 +253,7 @@ jobs:
 
           print(json.dumps({
               "base_validation_run": base_validation_run,
-              "cleanup_pr": int(pr_number),
+              "phase1_pr": int(pr_number),
               "release_source_sha": release_source_sha,
               "source_validation_run": source_validation_run,
               "tag": release_tag,
@@ -431,7 +414,7 @@ jobs:
               output.write(f"run_id={run_id}\n")
           PY
 
-      - name: Report successful publication and cleanup readiness
+      - name: Report phase-1 release readiness
         if: ${{ steps.release.outcome == 'success' }}
         shell: bash
         env:
@@ -448,12 +431,11 @@ jobs:
           import urllib.request
 
           body = (
-              "<!-- agent-state-dashboard-finalize-release-0.1.2-ready -->\n"
-              f"Finalizer run `{os.environ['GITHUB_RUN_ID']}` proved release source validation "
-              f"`{os.environ['SOURCE_VALIDATION_RUN']}` and current-main validation "
-              f"`{os.environ['BASE_VALIDATION_RUN']}`, tag action `{os.environ['TAG_ACTION']}`, "
-              f"and successful normal tag-push release run `{os.environ['RELEASE_RUN_ID']}`. "
-              f"Cleanup PR `#{os.environ['PR_NUMBER']}` is release-ready to merge."
+              "<!-- agent-state-dashboard-finalize-release-0.1.2-phase1-ready -->\n"
+              f"Finalizer run `{os.environ['GITHUB_RUN_ID']}` proved release-source validation "
+              f"`{os.environ['SOURCE_VALIDATION_RUN']}`, current-main validation `{os.environ['BASE_VALIDATION_RUN']}`, "
+              f"tag action `{os.environ['TAG_ACTION']}`, and successful normal tag-push release run "
+              f"`{os.environ['RELEASE_RUN_ID']}`. Phase-1 cleanup PR `#{os.environ['PHASE1_PR_NUMBER']}` is release-ready to merge."
           )
           payload = json.dumps({"body": body}, separators=(",", ":")).encode("utf-8")
           request = urllib.request.Request(
@@ -463,18 +445,18 @@ jobs:
                   "Accept": "application/vnd.github+json",
                   "Authorization": f"Bearer {os.environ['ISSUE_COMMENT_TOKEN']}",
                   "Content-Type": "application/json",
-                  "User-Agent": "StreamScapeTV-agent-state-dashboard-0.1.2-finalizer-ready",
+                  "User-Agent": "StreamScapeTV-agent-state-dashboard-0.1.2-phase1-ready",
                   "X-GitHub-Api-Version": "2022-11-28",
               },
               method="POST",
           )
           with urllib.request.urlopen(request, timeout=30) as response:
               if response.status not in {200, 201}:
-                  raise SystemExit("finalizer_ready_comment_failed")
+                  raise SystemExit("finalizer_phase1_ready_comment_failed")
           PY
 
-      - id: cleanup
-        name: Wait for cleanup merge and verify final main validation
+      - id: phase1_cleanup
+        name: Wait for phase-1 merge and verify main
         if: ${{ steps.release.outcome == 'success' }}
         shell: bash
         env:
@@ -492,15 +474,13 @@ jobs:
           import urllib.request
 
           repository = os.environ["GITHUB_REPOSITORY"]
-          pr_number = os.environ["PR_NUMBER"]
+          pr_number = os.environ["PHASE1_PR_NUMBER"]
           token = os.environ["ACTIONS_READ_TOKEN"]
-          if not token:
-              raise SystemExit("finalizer_cleanup_actions_token_required")
           api_root = f"https://api.github.com/repos/{repository}"
           headers = {
               "Accept": "application/vnd.github+json",
               "Authorization": f"Bearer {token}",
-              "User-Agent": "StreamScapeTV-agent-state-dashboard-0.1.2-finalizer-cleanup",
+              "User-Agent": "StreamScapeTV-agent-state-dashboard-0.1.2-phase1-cleanup",
               "X-GitHub-Api-Version": "2022-11-28",
           }
 
@@ -518,23 +498,19 @@ jobs:
               if attempt < 599:
                   time.sleep(2)
           if not isinstance(merge_sha, str) or re.fullmatch(r"[0-9a-f]{40}", merge_sha) is None:
-              raise SystemExit("finalizer_cleanup_merge_not_observed")
-
+              raise SystemExit("finalizer_phase1_merge_not_observed")
           main_ref = get("/git/ref/heads/main")
           if not isinstance(main_ref, dict) or main_ref.get("object", {}).get("sha") != merge_sha:
-              raise SystemExit("finalizer_cleanup_merge_not_current_main")
+              raise SystemExit("finalizer_phase1_merge_not_current_main")
 
           validation_run = None
           last_completed = None
           for attempt in range(180):
-              query = urllib.parse.urlencode(
-                  {"event": "push", "status": "completed", "head_sha": merge_sha, "per_page": "20"}
-              )
+              query = urllib.parse.urlencode({"event": "push", "status": "completed", "head_sha": merge_sha, "per_page": "20"})
               payload = get(f"/actions/workflows/validation.yml/runs?{query}")
               runs = payload.get("workflow_runs", []) if isinstance(payload, dict) else []
               completed = [
-                  run
-                  for run in runs
+                  run for run in runs
                   if isinstance(run, dict)
                   and run.get("event") == "push"
                   and run.get("head_sha") == merge_sha
@@ -552,28 +528,304 @@ jobs:
                   time.sleep(2)
           if validation_run is None:
               if last_completed is not None:
-                  raise SystemExit(
-                      f"finalizer_cleanup_validation_not_green:{last_completed.get('id')}:{last_completed.get('conclusion')}"
-                  )
-              raise SystemExit("finalizer_cleanup_validation_missing")
+                  raise SystemExit(f"finalizer_phase1_validation_not_green:{last_completed.get('id')}:{last_completed.get('conclusion')}")
+              raise SystemExit("finalizer_phase1_validation_missing")
           artifacts = get(f"/actions/runs/{validation_run}/artifacts?per_page=100")
           if not isinstance(artifacts, dict) or artifacts.get("total_count") != 0:
-              raise SystemExit("finalizer_cleanup_validation_artifacts_present")
-
-          print(json.dumps({"cleanup_merge_sha": merge_sha, "cleanup_validation_run": validation_run}, separators=(",", ":"), sort_keys=True))
+              raise SystemExit("finalizer_phase1_validation_artifacts_present")
+          print(json.dumps({"merge_sha": merge_sha, "validation_run": validation_run}, separators=(",", ":"), sort_keys=True))
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"merge_sha={merge_sha}\n")
               output.write(f"validation_run={validation_run}\n")
           PY
 
-      - name: Report final cleanup evidence
-        if: ${{ steps.cleanup.outcome == 'success' }}
+      - name: Report phase-1 cleanup completion
+        if: ${{ steps.phase1_cleanup.outcome == 'success' }}
+        shell: bash
+        env:
+          ISSUE_COMMENT_TOKEN: ${{ github.token }}
+          PHASE1_MERGE_SHA: ${{ steps.phase1_cleanup.outputs.merge_sha }}
+          PHASE1_VALIDATION_RUN: ${{ steps.phase1_cleanup.outputs.validation_run }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          body = (
+              "<!-- agent-state-dashboard-finalize-release-0.1.2-phase1-complete -->\n"
+              f"Phase-1 cleanup merged at `{os.environ['PHASE1_MERGE_SHA']}` with green zero-artifact "
+              f"main validation `{os.environ['PHASE1_VALIDATION_RUN']}`. Create the finalized phase-2 PR "
+              f"from `{os.environ['PHASE2_HEAD_REF']}` titled `{os.environ['PHASE2_TITLE']}` to remove only the finalizer workflow and its test."
+          )
+          payload = json.dumps({"body": body}, separators=(",", ":")).encode("utf-8")
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues/55/comments",
+              data=payload,
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {os.environ['ISSUE_COMMENT_TOKEN']}",
+                  "Content-Type": "application/json",
+                  "User-Agent": "StreamScapeTV-agent-state-dashboard-0.1.2-phase1-complete",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+              method="POST",
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              if response.status not in {200, 201}:
+                  raise SystemExit("finalizer_phase1_complete_comment_failed")
+          PY
+
+      - id: phase2_admit
+        name: Wait for exact phase-2 PR and its head validation
+        if: ${{ steps.phase1_cleanup.outcome == 'success' }}
+        shell: bash
+        env:
+          ACTIONS_READ_TOKEN: ${{ github.token }}
+          PHASE1_MERGE_SHA: ${{ steps.phase1_cleanup.outputs.merge_sha }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import re
+          import time
+          import urllib.parse
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["ACTIONS_READ_TOKEN"]
+          phase1_merge_sha = os.environ["PHASE1_MERGE_SHA"]
+          phase2_ref = os.environ["PHASE2_HEAD_REF"]
+          phase2_title = os.environ["PHASE2_TITLE"]
+          api_root = f"https://api.github.com/repos/{repository}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "User-Agent": "StreamScapeTV-agent-state-dashboard-0.1.2-phase2-admit",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def get(path: str):
+              request = urllib.request.Request(f"{api_root}{path}", headers=headers, method="GET")
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          phase2 = None
+          encoded_head = urllib.parse.quote(f"StreamScapeTV:{phase2_ref}", safe="")
+          for attempt in range(600):
+              pulls = get(f"/pulls?state=open&head={encoded_head}&base=main&per_page=20")
+              candidates = [
+                  pull for pull in pulls
+                  if isinstance(pull, dict)
+                  and pull.get("title") == phase2_title
+                  and pull.get("draft") is False
+                  and pull.get("user", {}).get("login") == "mimranfaruqi"
+                  and pull.get("base", {}).get("sha") == phase1_merge_sha
+                  and pull.get("head", {}).get("repo", {}).get("full_name") == repository
+                  and pull.get("head", {}).get("ref") == phase2_ref
+              ] if isinstance(pulls, list) else []
+              if len(candidates) == 1:
+                  phase2 = candidates[0]
+                  break
+              if len(candidates) > 1:
+                  raise SystemExit("finalizer_phase2_multiple_candidates")
+              if attempt < 599:
+                  time.sleep(2)
+          if phase2 is None:
+              raise SystemExit("finalizer_phase2_pr_not_observed")
+
+          phase2_number = phase2.get("number")
+          phase2_head_sha = phase2.get("head", {}).get("sha")
+          if not isinstance(phase2_number, int) or phase2_number <= 0:
+              raise SystemExit("finalizer_phase2_number_invalid")
+          if not isinstance(phase2_head_sha, str) or re.fullmatch(r"[0-9a-f]{40}", phase2_head_sha) is None:
+              raise SystemExit("finalizer_phase2_head_sha_invalid")
+
+          files = get(f"/pulls/{phase2_number}/files?per_page=100")
+          expected_files = {
+              ".github/workflows/finalize-release-0.1.2.yml",
+              "tests/finalize-release-0.1.2.test.mjs",
+          }
+          filenames = {row.get("filename") for row in files if isinstance(row, dict)} if isinstance(files, list) else set()
+          if filenames != expected_files or len(files) != 2:
+              raise SystemExit("finalizer_phase2_file_set_mismatch")
+          if any(row.get("status") != "removed" for row in files if isinstance(row, dict)):
+              raise SystemExit("finalizer_phase2_requires_deletions_only")
+
+          validation_run = None
+          last_completed = None
+          for attempt in range(180):
+              query = urllib.parse.urlencode({"event": "pull_request", "status": "completed", "head_sha": phase2_head_sha, "per_page": "20"})
+              payload = get(f"/actions/workflows/validation.yml/runs?{query}")
+              runs = payload.get("workflow_runs", []) if isinstance(payload, dict) else []
+              completed = [
+                  run for run in runs
+                  if isinstance(run, dict)
+                  and run.get("event") == "pull_request"
+                  and run.get("head_sha") == phase2_head_sha
+                  and run.get("head_branch") == phase2_ref
+                  and run.get("name") == "Node validation"
+                  and run.get("status") == "completed"
+                  and isinstance(run.get("id"), int)
+              ]
+              if completed:
+                  last_completed = max(completed, key=lambda item: item["id"])
+                  if last_completed.get("conclusion") == "success":
+                      validation_run = last_completed["id"]
+                      break
+              if attempt < 179:
+                  time.sleep(2)
+          if validation_run is None:
+              if last_completed is not None:
+                  raise SystemExit(f"finalizer_phase2_validation_not_green:{last_completed.get('id')}:{last_completed.get('conclusion')}")
+              raise SystemExit("finalizer_phase2_validation_missing")
+          artifacts = get(f"/actions/runs/{validation_run}/artifacts?per_page=100")
+          if not isinstance(artifacts, dict) or artifacts.get("total_count") != 0:
+              raise SystemExit("finalizer_phase2_validation_artifacts_present")
+
+          print(json.dumps({"phase2_head_sha": phase2_head_sha, "phase2_pr": phase2_number, "phase2_validation_run": validation_run}, separators=(",", ":"), sort_keys=True))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"pr_number={phase2_number}\n")
+              output.write(f"head_sha={phase2_head_sha}\n")
+              output.write(f"validation_run={validation_run}\n")
+          PY
+
+      - name: Report phase-2 merge readiness
+        if: ${{ steps.phase2_admit.outcome == 'success' }}
+        shell: bash
+        env:
+          ISSUE_COMMENT_TOKEN: ${{ github.token }}
+          PHASE2_PR_NUMBER: ${{ steps.phase2_admit.outputs.pr_number }}
+          PHASE2_HEAD_SHA: ${{ steps.phase2_admit.outputs.head_sha }}
+          PHASE2_VALIDATION_RUN: ${{ steps.phase2_admit.outputs.validation_run }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          body = (
+              "<!-- agent-state-dashboard-finalize-release-0.1.2-phase2-ready -->\n"
+              f"Phase-2 PR `#{os.environ['PHASE2_PR_NUMBER']}` exact head `{os.environ['PHASE2_HEAD_SHA']}` "
+              f"passed Node validation `{os.environ['PHASE2_VALIDATION_RUN']}` with zero Actions artifacts and is ready to merge."
+          )
+          payload = json.dumps({"body": body}, separators=(",", ":")).encode("utf-8")
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues/55/comments",
+              data=payload,
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {os.environ['ISSUE_COMMENT_TOKEN']}",
+                  "Content-Type": "application/json",
+                  "User-Agent": "StreamScapeTV-agent-state-dashboard-0.1.2-phase2-ready",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+              method="POST",
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              if response.status not in {200, 201}:
+                  raise SystemExit("finalizer_phase2_ready_comment_failed")
+          PY
+
+      - id: phase2_cleanup
+        name: Wait for phase-2 merge and verify final main
+        if: ${{ steps.phase2_admit.outcome == 'success' }}
+        shell: bash
+        env:
+          ACTIONS_READ_TOKEN: ${{ github.token }}
+          PHASE2_PR_NUMBER: ${{ steps.phase2_admit.outputs.pr_number }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import re
+          import time
+          import urllib.parse
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["ACTIONS_READ_TOKEN"]
+          pr_number = os.environ["PHASE2_PR_NUMBER"]
+          api_root = f"https://api.github.com/repos/{repository}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "User-Agent": "StreamScapeTV-agent-state-dashboard-0.1.2-phase2-cleanup",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def get(path: str):
+              request = urllib.request.Request(f"{api_root}{path}", headers=headers, method="GET")
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          merge_sha = None
+          for attempt in range(600):
+              pull = get(f"/pulls/{pr_number}")
+              if isinstance(pull, dict) and pull.get("merged") is True:
+                  merge_sha = pull.get("merge_commit_sha")
+                  break
+              if attempt < 599:
+                  time.sleep(2)
+          if not isinstance(merge_sha, str) or re.fullmatch(r"[0-9a-f]{40}", merge_sha) is None:
+              raise SystemExit("finalizer_phase2_merge_not_observed")
+          main_ref = get("/git/ref/heads/main")
+          if not isinstance(main_ref, dict) or main_ref.get("object", {}).get("sha") != merge_sha:
+              raise SystemExit("finalizer_phase2_merge_not_current_main")
+
+          validation_run = None
+          last_completed = None
+          for attempt in range(180):
+              query = urllib.parse.urlencode({"event": "push", "status": "completed", "head_sha": merge_sha, "per_page": "20"})
+              payload = get(f"/actions/workflows/validation.yml/runs?{query}")
+              runs = payload.get("workflow_runs", []) if isinstance(payload, dict) else []
+              completed = [
+                  run for run in runs
+                  if isinstance(run, dict)
+                  and run.get("event") == "push"
+                  and run.get("head_sha") == merge_sha
+                  and run.get("head_branch") == "main"
+                  and run.get("name") == "Node validation"
+                  and run.get("status") == "completed"
+                  and isinstance(run.get("id"), int)
+              ]
+              if completed:
+                  last_completed = max(completed, key=lambda item: item["id"])
+                  if last_completed.get("conclusion") == "success":
+                      validation_run = last_completed["id"]
+                      break
+              if attempt < 179:
+                  time.sleep(2)
+          if validation_run is None:
+              if last_completed is not None:
+                  raise SystemExit(f"finalizer_phase2_main_validation_not_green:{last_completed.get('id')}:{last_completed.get('conclusion')}")
+              raise SystemExit("finalizer_phase2_main_validation_missing")
+          artifacts = get(f"/actions/runs/{validation_run}/artifacts?per_page=100")
+          if not isinstance(artifacts, dict) or artifacts.get("total_count") != 0:
+              raise SystemExit("finalizer_phase2_main_validation_artifacts_present")
+
+          print(json.dumps({"final_merge_sha": merge_sha, "final_validation_run": validation_run}, separators=(",", ":"), sort_keys=True))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"merge_sha={merge_sha}\n")
+              output.write(f"validation_run={validation_run}\n")
+          PY
+
+      - name: Report final release and cleanup evidence
+        if: ${{ steps.phase2_cleanup.outcome == 'success' }}
         shell: bash
         env:
           ISSUE_COMMENT_TOKEN: ${{ github.token }}
           RELEASE_RUN_ID: ${{ steps.release.outputs.run_id }}
-          CLEANUP_MERGE_SHA: ${{ steps.cleanup.outputs.merge_sha }}
-          CLEANUP_VALIDATION_RUN: ${{ steps.cleanup.outputs.validation_run }}
+          FINAL_MERGE_SHA: ${{ steps.phase2_cleanup.outputs.merge_sha }}
+          FINAL_VALIDATION_RUN: ${{ steps.phase2_cleanup.outputs.validation_run }}
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
@@ -583,10 +835,10 @@ jobs:
 
           body = (
               "<!-- agent-state-dashboard-finalize-release-0.1.2-complete -->\n"
-              f"Finalizer run `{os.environ['GITHUB_RUN_ID']}` completed: release run "
-              f"`{os.environ['RELEASE_RUN_ID']}` is green with zero Actions artifacts; cleanup "
-              f"merged at `{os.environ['CLEANUP_MERGE_SHA']}` and protected-main validation "
-              f"`{os.environ['CLEANUP_VALIDATION_RUN']}` is green with zero Actions artifacts."
+              f"Finalizer run `{os.environ['GITHUB_RUN_ID']}` completed: normal 0.1.2 release run "
+              f"`{os.environ['RELEASE_RUN_ID']}` is green with zero Actions artifacts; all temporary "
+              f"release helpers are removed at final main `{os.environ['FINAL_MERGE_SHA']}` and protected-main "
+              f"validation `{os.environ['FINAL_VALIDATION_RUN']}` is green with zero Actions artifacts."
           )
           payload = json.dumps({"body": body}, separators=(",", ":")).encode("utf-8")
           request = urllib.request.Request(
@@ -615,7 +867,9 @@ jobs:
           ADMISSION_OUTCOME: ${{ steps.admit.outcome }}
           TAG_OUTCOME: ${{ steps.tag.outcome }}
           RELEASE_OUTCOME: ${{ steps.release.outcome }}
-          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+          PHASE1_OUTCOME: ${{ steps.phase1_cleanup.outcome }}
+          PHASE2_ADMIT_OUTCOME: ${{ steps.phase2_admit.outcome }}
+          PHASE2_OUTCOME: ${{ steps.phase2_cleanup.outcome }}
           RELEASE_RUN_ID: ${{ steps.release.outputs.run_id }}
         run: |
           set -Eeuo pipefail
@@ -627,10 +881,9 @@ jobs:
           body = (
               "<!-- agent-state-dashboard-finalize-release-0.1.2-failure -->\n"
               f"Finalizer run `{os.environ['GITHUB_RUN_ID']}` failed: "
-              f"admission=`{os.environ.get('ADMISSION_OUTCOME', '')}`, "
-              f"tag=`{os.environ.get('TAG_OUTCOME', '')}`, "
-              f"release=`{os.environ.get('RELEASE_OUTCOME', '')}`, "
-              f"cleanup=`{os.environ.get('CLEANUP_OUTCOME', '')}`, "
+              f"admission=`{os.environ.get('ADMISSION_OUTCOME', '')}`, tag=`{os.environ.get('TAG_OUTCOME', '')}`, "
+              f"release=`{os.environ.get('RELEASE_OUTCOME', '')}`, phase1=`{os.environ.get('PHASE1_OUTCOME', '')}`, "
+              f"phase2_admit=`{os.environ.get('PHASE2_ADMIT_OUTCOME', '')}`, phase2=`{os.environ.get('PHASE2_OUTCOME', '')}`, "
               f"release_run_id=`{os.environ.get('RELEASE_RUN_ID', '')}`."
           )
           payload = json.dumps({"body": body}, separators=(",", ":")).encode("utf-8")
