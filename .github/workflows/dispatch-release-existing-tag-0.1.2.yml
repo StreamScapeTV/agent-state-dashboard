@@ -79,7 +79,37 @@ jobs:
                       raw = response.read(1_000_001)
                       status = response.status
               except urllib.error.HTTPError as error:
-                  raise SystemExit(f"native_dispatch_github_http_{error.code}") from None
+                  error_raw = error.read(8_193)
+                  if len(error_raw) > 8_192:
+                      raise SystemExit(f"native_dispatch_github_http_{error.code}:{method}:{path}:error_response_too_large") from None
+                  message = ""
+                  error_codes: list[str] = []
+                  try:
+                      error_payload = json.loads(error_raw.decode("utf-8")) if error_raw else {}
+                  except (UnicodeDecodeError, json.JSONDecodeError):
+                      error_payload = {}
+                  if isinstance(error_payload, dict):
+                      raw_message = error_payload.get("message")
+                      if isinstance(raw_message, str):
+                          message = raw_message.replace("\r", " ").replace("\n", " ")[:500]
+                      raw_errors = error_payload.get("errors")
+                      if isinstance(raw_errors, list):
+                          for item in raw_errors[:5]:
+                              if isinstance(item, dict):
+                                  code = item.get("code")
+                                  field = item.get("field")
+                                  resource = item.get("resource")
+                                  error_codes.append(f"{resource}:{field}:{code}"[:200])
+                              elif isinstance(item, str):
+                                  error_codes.append(item[:200])
+                  details = json.dumps(
+                      {"message": message, "errors": error_codes},
+                      separators=(",", ":"),
+                      sort_keys=True,
+                  )
+                  raise SystemExit(
+                      f"native_dispatch_github_http_{error.code}:{method}:{path}:{details}"
+                  ) from None
               except OSError:
                   raise SystemExit("native_dispatch_github_request_failed") from None
               if len(raw) > 1_000_000:
