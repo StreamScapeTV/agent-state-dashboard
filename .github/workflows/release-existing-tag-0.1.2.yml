@@ -23,7 +23,7 @@ jobs:
       github.repository == 'StreamScapeTV/agent-state-dashboard' &&
       github.event_name == 'workflow_dispatch' &&
       inputs.request_id == 'issue-55-native-existing-tag-0.1.2'
-    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-native-image-chart.yml@3622994c73f0dda06d9c22d51091f9e90b096bc5
+    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-native-image-chart.yml@9e85bd68ad5c26c8b087f7907acb1427f76fcca0
     with:
       release_mode: existing-tag
       release_version: 0.1.2
