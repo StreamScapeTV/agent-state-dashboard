@@ -48,14 +48,15 @@ const publisherSha = "7ff890874bf8091203dddd9bfb11cb498eefe6d4";
 test("container builds with Node but runs only pinned NGINX", () => {
   assert.match(dockerfile, new RegExp(`ARG NODE_VERSION=${nodeVersion.replaceAll(".", "\\.")}`));
   const pinnedNodeBases = dockerfile.match(
-    /FROM node:\$\{NODE_VERSION\}-alpine@sha256:1b2479dd35a99687d6638f5976fd235e26c5b37e8122f786fcd5fe231d63de5b/g,
+    /FROM docker\.io\/library\/node:\$\{NODE_VERSION\}-alpine@sha256:1b2479dd35a99687d6638f5976fd235e26c5b37e8122f786fcd5fe231d63de5b/g,
   );
   assert.equal(pinnedNodeBases?.length, 1);
   assert.match(dockerfile, /ARG NGINX_VERSION=1\.29\.8/);
   assert.match(
     dockerfile,
-    /FROM nginx:\$\{NGINX_VERSION\}-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de AS runtime/,
+    /FROM docker\.io\/library\/nginx:\$\{NGINX_VERSION\}-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de AS runtime/,
   );
+  assert.doesNotMatch(dockerfile, /^FROM (?:node|nginx):/m);
   assert.match(dockerfile, /npm ci/);
   assert.match(dockerfile, /npm run build/);
   assert.match(dockerfile, /test -f out\/index\.html/);
