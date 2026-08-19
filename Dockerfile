@@ -1,7 +1,7 @@
 ARG NODE_VERSION=22.18.0
 ARG NGINX_VERSION=1.29.8
 
-FROM node:${NODE_VERSION}-alpine@sha256:1b2479dd35a99687d6638f5976fd235e26c5b37e8122f786fcd5fe231d63de5b AS build
+FROM docker.io/library/node:${NODE_VERSION}-alpine@sha256:1b2479dd35a99687d6638f5976fd235e26c5b37e8122f786fcd5fe231d63de5b AS build
 WORKDIR /workspace
 ENV NEXT_TELEMETRY_DISABLED=1
 
@@ -14,7 +14,7 @@ RUN set -eux; \
     test -f out/index.html; \
     test -d out/_next/static
 
-FROM nginx:${NGINX_VERSION}-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de AS runtime
+FROM docker.io/library/nginx:${NGINX_VERSION}-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de AS runtime
 
 COPY --from=build /workspace/out/ /usr/share/nginx/html/
 COPY docker/nginx.conf /etc/nginx/templates/nginx.conf.template
