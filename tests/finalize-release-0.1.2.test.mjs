@@ -62,6 +62,11 @@ test("driver binds the corrected immutable release identity", () => {
   assert.match(driver, /release_source_merge_base_mismatch/);
 });
 
+test("all admitted cleanup files are enforced as deletions", () => {
+  assert.match(driver, /row\.get\("status"\) != "removed"/);
+  assert.match(driver, /f"\{label\}_requires_deletions_only"/);
+});
+
 test("phase-1 admission is deletion-only and retains the finalizer", () => {
   for (const path of [
     ".github/workflows/cut-release-0.1.1-arc.yml",
@@ -75,7 +80,6 @@ test("phase-1 admission is deletion-only and retains the finalizer", () => {
     assert.match(driver, new RegExp(path.replaceAll(".", "\\.")));
   }
   assert.match(driver, /assert_deleted_file_set\(token, pr_number, PHASE1_FILES, "phase1"\)/);
-  assert.match(driver, /phase1_requires_deletions_only/);
   assert.doesNotMatch(driver.match(/PHASE1_FILES = \{[\s\S]*?\n\}/)?.[0] ?? "", /finalize-release-0\.1\.2/);
 });
 
@@ -86,7 +90,6 @@ test("phase-2 removes exactly the finalizer workflow script and contract test", 
   assert.match(phase2, /tests\/finalize-release-0\.1\.2\.test\.mjs/);
   assert.equal((phase2.match(/"[^\n]+"/g) ?? []).length, 3);
   assert.match(driver, /assert_deleted_file_set\(token, number, PHASE2_FILES, "phase2"\)/);
-  assert.match(driver, /phase2_requires_deletions_only/);
 });
 
 test("driver requires green zero-artifact validation for every release and cleanup boundary", () => {
