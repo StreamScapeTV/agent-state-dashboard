@@ -60,6 +60,19 @@ test("dispatcher accepts only the exact owner command on issue 55", () => {
   assert.match(dispatcher, /^\s*issues:\s*write\s*$/m);
 });
 
+test("dispatcher requires green zero-artifact protected main before recovery dispatch", () => {
+  assert.match(dispatcher, /\/actions\/workflows\/validation\.yml\/runs/);
+  assert.match(dispatcher, /"event": "push"/);
+  assert.match(dispatcher, /run\.get\("head_branch"\) == "main"/);
+  assert.match(dispatcher, /run\.get\("name"\) == "Node validation"/);
+  assert.match(dispatcher, /latest\.get\("conclusion"\) != "success"/);
+  assert.match(dispatcher, /native_dispatch_main_validation_not_green/);
+  assert.match(dispatcher, /\/actions\/runs\/\{validation_run_id\}\/artifacts/);
+  assert.match(dispatcher, /artifacts\.get\("total_count"\) != 0/);
+  assert.match(dispatcher, /native_dispatch_main_validation_artifacts_present/);
+  assert.match(dispatcher, /native_dispatch_main_validation_missing/);
+});
+
 test("dispatcher verifies the immutable tag and only dispatches the bounded publisher", () => {
   assert.match(dispatcher, new RegExp(sourceSha));
   assert.match(dispatcher, /\/git\/ref\/tags\/0\.1\.2/);

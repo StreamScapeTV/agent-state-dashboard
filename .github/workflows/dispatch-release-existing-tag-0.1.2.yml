@@ -30,7 +30,7 @@ jobs:
       DISPATCH_TOKEN: ${{ github.token }}
       EXPECTED_MAIN_SHA: ${{ github.sha }}
     steps:
-      - name: Verify immutable tag and dispatch bounded recovery
+      - name: Verify protected main, immutable tag and dispatch bounded recovery
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -39,6 +39,7 @@ jobs:
 
           import json
           import os
+          import time
           import urllib.error
           import urllib.parse
           import urllib.request
@@ -86,6 +87,48 @@ jobs:
           if not isinstance(main_ref, dict) or main_ref.get("object", {}).get("sha") != expected_main:
               raise SystemExit("native_dispatch_main_drifted")
 
+          validation_run_id = None
+          for attempt in range(120):
+              query = urllib.parse.urlencode(
+                  {
+                      "event": "push",
+                      "status": "completed",
+                      "head_sha": expected_main,
+                      "per_page": "20",
+                  }
+              )
+              _, payload = request("GET", f"/actions/workflows/validation.yml/runs?{query}")
+              runs = payload.get("workflow_runs", []) if isinstance(payload, dict) else []
+              completed = [
+                  run
+                  for run in runs
+                  if isinstance(run, dict)
+                  and run.get("event") == "push"
+                  and run.get("head_sha") == expected_main
+                  and run.get("head_branch") == "main"
+                  and run.get("name") == "Node validation"
+                  and run.get("status") == "completed"
+                  and isinstance(run.get("id"), int)
+              ]
+              if completed:
+                  latest = max(completed, key=lambda item: item["id"])
+                  if latest.get("conclusion") != "success":
+                      raise SystemExit(
+                          f"native_dispatch_main_validation_not_green:{latest.get('id')}:{latest.get('conclusion')}"
+                      )
+                  validation_run_id = latest["id"]
+                  _, artifacts = request(
+                      "GET",
+                      f"/actions/runs/{validation_run_id}/artifacts?per_page=100",
+                  )
+                  if not isinstance(artifacts, dict) or artifacts.get("total_count") != 0:
+                      raise SystemExit("native_dispatch_main_validation_artifacts_present")
+                  break
+              if attempt < 119:
+                  time.sleep(2)
+          if validation_run_id is None:
+              raise SystemExit("native_dispatch_main_validation_missing")
+
           _, tag_ref = request("GET", "/git/ref/tags/0.1.2")
           if not isinstance(tag_ref, dict):
               raise SystemExit("native_dispatch_tag_missing")
@@ -114,8 +157,8 @@ jobs:
 
           comment = (
               "<!-- agent-state-dashboard-native-existing-tag-0.1.2-dispatch -->\n"
-              f"Accepted owner command and dispatched the bounded native existing-tag publisher from main `{expected_main}` "
-              f"for immutable tag `0.1.2` -> `{expected_source}`."
+              f"Accepted owner command after protected-main validation `{validation_run_id}` and dispatched the bounded "
+              f"native existing-tag publisher from main `{expected_main}` for immutable tag `0.1.2` -> `{expected_source}`."
           )
           status, _ = request("POST", "/issues/55/comments", {"body": comment})
           if status not in {200, 201}:
