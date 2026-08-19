@@ -1,16 +1,27 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const workflow = await readFile(
-  new URL("../.github/workflows/finalize-release-0.1.2.yml", import.meta.url),
-  "utf8",
-);
+const workflowUrl = new URL("../.github/workflows/finalize-release-0.1.2.yml", import.meta.url);
+const driverUrl = new URL("../.github/scripts/finalize_release_0_1_2.py", import.meta.url);
+const [workflow, driver] = await Promise.all([
+  readFile(workflowUrl, "utf8"),
+  readFile(driverUrl, "utf8"),
+]);
 
-test("0.1.2 finalizer uses the repository-proven pull_request event and exact phase-1 PR", () => {
+test("temporary Python finalizer driver parses without writing bytecode", () => {
+  const result = spawnSync(
+    "python3",
+    ["-c", "from pathlib import Path; compile(Path(__import__('sys').argv[1]).read_text(encoding='utf-8'), __import__('sys').argv[1], 'exec')", driverUrl.pathname],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test("finalizer uses the proven exact same-repository PR event", () => {
   assert.match(workflow, /^\s*pull_request:\s*$/m);
   assert.doesNotMatch(workflow, /^\s*pull_request_target:\s*$/m);
-  assert.match(workflow, /^\s*types:\s*\[opened, synchronize, reopened, ready_for_review\]\s*$/m);
   assert.match(workflow, /github\.event\.pull_request\.base\.ref == 'main'/);
   assert.match(workflow, /github\.event\.pull_request\.head\.repo\.full_name == 'StreamScapeTV\/agent-state-dashboard'/);
   assert.match(workflow, /github\.event\.pull_request\.head\.ref == 'orchestrator\/issue-55-retire-release-helpers'/);
@@ -19,7 +30,44 @@ test("0.1.2 finalizer uses the repository-proven pull_request event and exact ph
   assert.match(workflow, /github\.event\.pull_request\.draft == false/);
 });
 
-test("phase-1 cleanup keeps only the finalizer while removing obsolete helpers", () => {
+test("finalizer has branch-scoped concurrency and uses the reviewed ARC lane", () => {
+  assert.match(
+    workflow,
+    /group: agent-state-dashboard-finalize-release-0\.1\.2-\$\{\{ github\.event\.pull_request\.head\.ref \}\}/,
+  );
+  assert.match(workflow, /cancel-in-progress: true/);
+  assert.match(workflow, /runs-on: \[linux, amd64, general, tiny\]/);
+  assert.match(workflow, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
+  assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
+  assert.match(workflow, /persist-credentials: false/);
+});
+
+test("maintenance authority is exposed only to the bounded tag step", () => {
+  assert.equal((workflow.match(/secrets\.ORGANIZATION_MAINTENANCE_TOKEN/g) ?? []).length, 1);
+  assert.match(workflow, /MAINTENANCE_TOKEN: \$\{\{ secrets\.ORGANIZATION_MAINTENANCE_TOKEN \}\}/);
+  assert.match(workflow, /finalize_release_0_1_2\.py tag/);
+  assert.doesNotMatch(workflow, /FORGEJO_REGISTRY_(?:USERNAME|TOKEN)/);
+  assert.match(driver, /api_request\(\s*token,\s*"POST",\s*"\/git\/refs"/);
+  assert.match(driver, /"ref": f"refs\/tags\/\{RELEASE_TAG\}"/);
+  assert.match(driver, /tag_readback_mismatch/);
+});
+
+test("driver binds the corrected immutable release identity", () => {
+  assert.match(driver, /RELEASE_TAG = "0\.1\.2"/);
+  assert.match(driver, /RELEASE_SOURCE_SHA = "3187db893f5629d8703897a83245df46b62b6f7d"/);
+  assert.match(driver, /release_package_version_mismatch/);
+  assert.match(driver, /release_chart_version_mismatch/);
+  assert.match(driver, /release_chart_app_version_mismatch/);
+  assert.match(driver, /release_source_not_ancestor/);
+  assert.match(driver, /release_source_merge_base_mismatch/);
+});
+
+test("all admitted cleanup files are enforced as deletions", () => {
+  assert.match(driver, /row\.get\("status"\) != "removed"/);
+  assert.match(driver, /f"\{label\}_requires_deletions_only"/);
+});
+
+test("phase-1 admission is deletion-only and retains the finalizer", () => {
   for (const path of [
     ".github/workflows/cut-release-0.1.1-arc.yml",
     ".github/workflows/cut-release-0.1.1-pr.yml",
@@ -29,59 +77,37 @@ test("phase-1 cleanup keeps only the finalizer while removing obsolete helpers",
     "tests/release-tag-cut.test.mjs",
     "tests/release-0.1.2-cut.test.mjs",
   ]) {
-    assert.match(workflow, new RegExp(path.replaceAll(".", "\\.")));
+    assert.match(driver, new RegExp(path.replaceAll(".", "\\.")));
   }
-  assert.match(workflow, /finalizer_phase1_file_set_mismatch/);
-  assert.match(workflow, /finalizer_phase1_requires_deletions_only/);
+  assert.match(driver, /assert_deleted_file_set\(token, pr_number, PHASE1_FILES, "phase1"\)/);
+  assert.doesNotMatch(driver.match(/PHASE1_FILES = \{[\s\S]*?\n\}/)?.[0] ?? "", /finalize-release-0\.1\.2/);
 });
 
-test("finalizer binds corrected release source and requires green zero-artifact main validation", () => {
-  assert.match(workflow, /^\s*RELEASE_TAG:\s*0\.1\.2\s*$/m);
-  assert.match(workflow, /^\s*RELEASE_SOURCE_SHA:\s*3187db893f5629d8703897a83245df46b62b6f7d\s*$/m);
-  assert.match(workflow, /package\.get\("version"\) != release_tag/);
-  assert.match(workflow, /finalizer_chart_version_mismatch/);
-  assert.match(workflow, /finalizer_chart_app_version_mismatch/);
-  assert.match(workflow, /successful_validation\(release_source_sha, "push", "main"\)/);
-  assert.match(workflow, /successful_validation\(pr_base_sha, "push", "main"\)/);
-  assert.match(workflow, /artifacts\.get\("total_count"\) != 0/);
+test("phase-2 removes exactly the finalizer workflow script and contract test", () => {
+  const phase2 = driver.match(/PHASE2_FILES = \{[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.match(phase2, /\.github\/workflows\/finalize-release-0\.1\.2\.yml/);
+  assert.match(phase2, /\.github\/scripts\/finalize_release_0_1_2\.py/);
+  assert.match(phase2, /tests\/finalize-release-0\.1\.2\.test\.mjs/);
+  assert.equal((phase2.match(/"[^\n]+"/g) ?? []).length, 3);
+  assert.match(driver, /assert_deleted_file_set\(token, number, PHASE2_FILES, "phase2"\)/);
 });
 
-test("maintenance credential is scoped only to immutable tag creation", () => {
-  assert.match(workflow, /ORGANIZATION_MAINTENANCE_TOKEN: \$\{\{ secrets\.ORGANIZATION_MAINTENANCE_TOKEN \}\}/);
-  assert.match(workflow, /organization_maintenance_token_required/);
-  assert.match(workflow, /request\("POST", "\/git\/refs", \{"ref": f"refs\/tags\/\{release_tag\}", "sha": release_source_sha\}\)/);
-  assert.match(workflow, /finalizer_existing_tag_conflict/);
-  assert.match(workflow, /finalizer_tag_readback_mismatch/);
-  assert.doesNotMatch(workflow, /FORGEJO_REGISTRY_(?:USERNAME|TOKEN)/);
+test("driver requires green zero-artifact validation for every release and cleanup boundary", () => {
+  assert.match(driver, /wait_validation\(token, RELEASE_SOURCE_SHA, "push", "main"\)/);
+  assert.match(driver, /wait_validation\(token, base_sha, "push", "main"\)/);
+  assert.match(driver, /wait_validation\(token, phase1_merge, "push", "main"\)/);
+  assert.match(driver, /wait_validation\(token, phase2_head, "pull_request", PHASE2_REF\)/);
+  assert.match(driver, /wait_validation\(token, final_merge, "push", "main"\)/);
+  assert.match(driver, /validation_artifacts_present/);
 });
 
-test("normal tag-push publisher must succeed before phase-1 cleanup merges", () => {
-  assert.match(workflow, /actions\/workflows\/release\.yml\/runs/);
-  assert.match(workflow, /Publish tagged dashboard image and chart/);
-  assert.match(workflow, /finalizer_release_failed/);
-  assert.match(workflow, /Phase-1 cleanup PR .*release-ready to merge/);
-  assert.doesNotMatch(workflow, /buildah\s+(?:bud|build|push)|helm\s+push|skopeo\s+copy/);
-});
-
-test("running finalizer verifies phase-1 main then admits exact phase-2 self-removal", () => {
-  assert.match(workflow, /^\s*PHASE2_HEAD_REF:\s*orchestrator\/issue-55-retire-finalizer\s*$/m);
-  assert.match(workflow, /\[#55\] Remove final 0\.1\.2 release finalizer/);
-  assert.match(workflow, /finalizer_phase1_merge_not_current_main/);
-  assert.match(workflow, /finalizer_phase1_validation_not_green/);
-  assert.match(workflow, /\.github\/workflows\/finalize-release-0\.1\.2\.yml/);
-  assert.match(workflow, /tests\/finalize-release-0\.1\.2\.test\.mjs/);
-  assert.match(workflow, /finalizer_phase2_file_set_mismatch/);
-  assert.match(workflow, /finalizer_phase2_requires_deletions_only/);
-  assert.match(workflow, /"event": "pull_request"/);
-  assert.match(workflow, /run\.get\("head_branch"\) == phase2_ref/);
-  assert.match(workflow, /phase2-ready/);
-});
-
-test("finalizer survives its own deletion and proves final main validation", () => {
-  assert.match(workflow, /finalizer_phase2_merge_not_current_main/);
-  assert.match(workflow, /finalizer_phase2_main_validation_not_green/);
-  assert.match(workflow, /finalizer_phase2_main_validation_artifacts_present/);
-  assert.match(workflow, /agent-state-dashboard-finalize-release-0\.1\.2-complete/);
-  assert.match(workflow, /all temporary /);
-  assert.match(workflow, /release helpers are removed at final main/);
+test("driver only observes the normal publisher and reports bounded evidence", () => {
+  assert.match(driver, /actions\/workflows\/release\.yml\/runs/);
+  assert.match(driver, /Publish tagged dashboard image and chart/);
+  assert.match(driver, /release_artifacts_present/);
+  assert.match(driver, /agent-state-dashboard-finalize-release-0\.1\.2-phase1-ready/);
+  assert.match(driver, /agent-state-dashboard-finalize-release-0\.1\.2-phase2-ready/);
+  assert.match(driver, /agent-state-dashboard-finalize-release-0\.1\.2-complete/);
+  assert.match(driver, /agent-state-dashboard-finalize-release-0\.1\.2-failure/);
+  assert.doesNotMatch(`${workflow}\n${driver}`, /buildah\s+(?:bud|build|push)|helm\s+push|skopeo\s+copy/);
 });
