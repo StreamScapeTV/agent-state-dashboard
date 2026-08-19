@@ -12,7 +12,7 @@ const dispatcher = await readFile(
 );
 
 const sourceSha = "3187db893f5629d8703897a83245df46b62b6f7d";
-const centralSha = "3622994c73f0dda06d9c22d51091f9e90b096bc5";
+const centralSha = "9e85bd68ad5c26c8b087f7907acb1427f76fcca0";
 
 test("native recovery publisher is default-branch workflow_dispatch with an exact request gate", () => {
   assert.match(publisher, /^\s*workflow_dispatch:\s*$/m);
