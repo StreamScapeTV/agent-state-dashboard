@@ -82,5 +82,6 @@ test("finalizer survives its own deletion and proves final main validation", () 
   assert.match(workflow, /finalizer_phase2_main_validation_not_green/);
   assert.match(workflow, /finalizer_phase2_main_validation_artifacts_present/);
   assert.match(workflow, /agent-state-dashboard-finalize-release-0\.1\.2-complete/);
-  assert.match(workflow, /all temporary release helpers are removed/);
+  assert.match(workflow, /all temporary /);
+  assert.match(workflow, /release helpers are removed at final main/);
 });
