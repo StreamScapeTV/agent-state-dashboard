@@ -1,0 +1,414 @@
+name: Cut immutable dashboard 0.1.2 tag
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: agent-state-dashboard-cut-release-0.1.2
+  cancel-in-progress: false
+
+jobs:
+  cut_release_tag:
+    name: Validate main and cut exact 0.1.2 tag
+    if: >-
+      github.repository == 'StreamScapeTV/agent-state-dashboard' &&
+      github.event_name == 'issue_comment' &&
+      github.event.issue.number == 55 &&
+      github.event.issue.pull_request == null &&
+      github.actor == 'mimranfaruqi' &&
+      github.event.comment.user.login == 'mimranfaruqi' &&
+      github.event.comment.body == '/cut-release-0.1.2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      RELEASE_TAG: 0.1.2
+      RELEASE_SOURCE_SHA: 3187db893f5629d8703897a83245df46b62b6f7d
+      ADMISSION_TOKEN: ${{ github.token }}
+      ORGANIZATION_MAINTENANCE_TOKEN: ${{ secrets.ORGANIZATION_MAINTENANCE_TOKEN }}
+    steps:
+      - id: admit
+        name: Verify exact release source and protected-main evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import json
+          import os
+          import re
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          caller_sha = os.environ["GITHUB_SHA"]
+          release_tag = os.environ["RELEASE_TAG"]
+          release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
+          token = os.environ["ADMISSION_TOKEN"]
+
+          if repository != "StreamScapeTV/agent-state-dashboard":
+              raise SystemExit("release_cut_repository_mismatch")
+          if os.environ["GITHUB_EVENT_NAME"] != "issue_comment":
+              raise SystemExit("release_cut_event_mismatch")
+          if release_tag != "0.1.2":
+              raise SystemExit("release_cut_tag_mismatch")
+          for name, value in (("caller", caller_sha), ("source", release_source_sha)):
+              if re.fullmatch(r"[0-9a-f]{40}", value) is None:
+                  raise SystemExit(f"release_cut_{name}_sha_invalid")
+          if not token:
+              raise SystemExit("release_cut_admission_token_required")
+
+          api_root = f"https://api.github.com/repos/{repository}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "User-Agent": "StreamScapeTV-agent-state-dashboard-0.1.2-admission",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def request(method: str, path: str, *, missing_ok: bool = False):
+              req = urllib.request.Request(f"{api_root}{path}", headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      raw = response.read(2_000_001)
+              except urllib.error.HTTPError as error:
+                  if missing_ok and error.code == 404:
+                      return None
+                  raise SystemExit(f"release_cut_github_http_{error.code}") from None
+              except OSError:
+                  raise SystemExit("release_cut_github_request_failed") from None
+              if len(raw) > 2_000_000:
+                  raise SystemExit("release_cut_github_response_too_large")
+              try:
+                  value = json.loads(raw.decode("utf-8")) if raw else {}
+              except (UnicodeDecodeError, json.JSONDecodeError):
+                  raise SystemExit("release_cut_github_response_invalid") from None
+              return value
+
+          main_ref = request("GET", "/git/ref/heads/main")
+          current_main_sha = main_ref.get("object", {}).get("sha") if isinstance(main_ref, dict) else None
+          if current_main_sha != caller_sha:
+              raise SystemExit("release_cut_default_branch_drifted")
+
+          source_commit = request("GET", f"/git/commits/{release_source_sha}")
+          if not isinstance(source_commit, dict) or source_commit.get("sha") != release_source_sha:
+              raise SystemExit("release_cut_source_commit_mismatch")
+
+          comparison = request("GET", f"/compare/{release_source_sha}...{current_main_sha}")
+          if not isinstance(comparison, dict):
+              raise SystemExit("release_cut_comparison_invalid")
+          if comparison.get("status") not in {"ahead", "identical"}:
+              raise SystemExit("release_cut_source_not_ancestor")
+          if comparison.get("merge_base_commit", {}).get("sha") != release_source_sha:
+              raise SystemExit("release_cut_merge_base_mismatch")
+
+          def decoded_contents(path: str) -> str:
+              encoded_path = urllib.parse.quote(path, safe="/")
+              payload = request("GET", f"/contents/{encoded_path}?ref={release_source_sha}")
+              if not isinstance(payload, dict) or payload.get("encoding") != "base64":
+                  raise SystemExit("release_cut_contents_invalid")
+              content = payload.get("content")
+              if not isinstance(content, str):
+                  raise SystemExit("release_cut_contents_missing")
+              try:
+                  return base64.b64decode(content).decode("utf-8")
+              except (ValueError, UnicodeDecodeError):
+                  raise SystemExit("release_cut_contents_decode_failed") from None
+
+          package = json.loads(decoded_contents("package.json"))
+          if not isinstance(package, dict) or package.get("version") != release_tag:
+              raise SystemExit("release_cut_package_version_mismatch")
+          chart = decoded_contents("charts/agent-state-dashboard/Chart.yaml")
+          if re.search(r"^version:\s*0\.1\.2\s*$", chart, re.MULTILINE) is None:
+              raise SystemExit("release_cut_chart_version_mismatch")
+          if re.search(r"^appVersion:\s*[\"']?0\.1\.2[\"']?\s*$", chart, re.MULTILINE) is None:
+              raise SystemExit("release_cut_chart_app_version_mismatch")
+
+          def successful_main_validation(sha: str) -> int | None:
+              query = urllib.parse.urlencode(
+                  {
+                      "event": "push",
+                      "status": "completed",
+                      "head_sha": sha,
+                      "per_page": "20",
+                  }
+              )
+              payload = request("GET", f"/actions/workflows/validation.yml/runs?{query}")
+              runs = payload.get("workflow_runs", []) if isinstance(payload, dict) else []
+              candidates = [
+                  run
+                  for run in runs
+                  if isinstance(run, dict)
+                  and run.get("event") == "push"
+                  and run.get("head_sha") == sha
+                  and run.get("head_branch") == "main"
+                  and run.get("name") == "Node validation"
+                  and run.get("status") == "completed"
+                  and run.get("conclusion") == "success"
+                  and isinstance(run.get("id"), int)
+              ]
+              if not candidates:
+                  return None
+              run = max(candidates, key=lambda item: item["id"])
+              run_id = run["id"]
+              artifacts = request("GET", f"/actions/runs/{run_id}/artifacts?per_page=100")
+              if not isinstance(artifacts, dict) or artifacts.get("total_count") != 0:
+                  raise SystemExit("release_cut_validation_artifacts_present")
+              return run_id
+
+          validation_runs: dict[str, int] = {}
+          for label, sha in (("source", release_source_sha), ("current_main", current_main_sha)):
+              run_id = None
+              for attempt in range(90):
+                  run_id = successful_main_validation(sha)
+                  if run_id is not None:
+                      break
+                  if attempt < 89:
+                      time.sleep(2)
+              if run_id is None:
+                  raise SystemExit(f"release_cut_{label}_main_validation_missing")
+              validation_runs[label] = run_id
+
+          encoded_tag = urllib.parse.quote(release_tag, safe="")
+          existing = request("GET", f"/git/ref/tags/{encoded_tag}", missing_ok=True)
+          tag_preexisting = False
+          if existing is not None:
+              if not isinstance(existing, dict):
+                  raise SystemExit("release_cut_existing_tag_invalid")
+              ref_object = existing.get("object", {})
+              if ref_object.get("type") != "commit" or ref_object.get("sha") != release_source_sha:
+                  raise SystemExit("release_cut_existing_tag_conflict")
+              tag_preexisting = True
+
+          evidence = {
+              "current_main_sha": current_main_sha,
+              "release_source_sha": release_source_sha,
+              "source_validation_run": validation_runs["source"],
+              "current_main_validation_run": validation_runs["current_main"],
+              "tag": release_tag,
+              "tag_preexisting": tag_preexisting,
+          }
+          print(json.dumps(evidence, separators=(",", ":"), sort_keys=True))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"current_main_sha={current_main_sha}\n")
+              output.write(f"source_validation_run={validation_runs['source']}\n")
+              output.write(f"current_main_validation_run={validation_runs['current_main']}\n")
+              output.write(f"tag_preexisting={'true' if tag_preexisting else 'false'}\n")
+          PY
+
+      - id: tag
+        name: Create and read back exact lightweight 0.1.2 tag
+        shell: bash
+        env:
+          TAG_PREEXISTING: ${{ steps.admit.outputs.tag_preexisting }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          release_tag = os.environ["RELEASE_TAG"]
+          release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
+          token = os.environ["ORGANIZATION_MAINTENANCE_TOKEN"]
+          preexisting = os.environ["TAG_PREEXISTING"] == "true"
+
+          if not token or any(character in token for character in "\x00\r\n"):
+              raise SystemExit("organization_maintenance_token_required")
+          if re.fullmatch(r"[0-9a-f]{40}", release_source_sha) is None or release_tag != "0.1.2":
+              raise SystemExit("release_cut_tag_identity_invalid")
+
+          api_root = f"https://api.github.com/repos/{repository}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "User-Agent": "StreamScapeTV-agent-state-dashboard-0.1.2-tag",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def request(method: str, path: str, payload: dict[str, str] | None = None, *, missing_ok: bool = False):
+              body = None
+              request_headers = dict(headers)
+              if payload is not None:
+                  body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+                  request_headers["Content-Type"] = "application/json"
+              req = urllib.request.Request(f"{api_root}{path}", data=body, headers=request_headers, method=method)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      raw = response.read(1_000_001)
+              except urllib.error.HTTPError as error:
+                  if missing_ok and error.code == 404:
+                      return None
+                  raise SystemExit(f"release_cut_tag_github_http_{error.code}") from None
+              except OSError:
+                  raise SystemExit("release_cut_tag_github_request_failed") from None
+              if len(raw) > 1_000_000:
+                  raise SystemExit("release_cut_tag_github_response_too_large")
+              try:
+                  value = json.loads(raw.decode("utf-8")) if raw else {}
+              except (UnicodeDecodeError, json.JSONDecodeError):
+                  raise SystemExit("release_cut_tag_github_response_invalid") from None
+              return value
+
+          encoded_tag = urllib.parse.quote(release_tag, safe="")
+          tag_path = f"/git/ref/tags/{encoded_tag}"
+          action = "verified-existing"
+          if not preexisting:
+              existing = request("GET", tag_path, missing_ok=True)
+              if existing is not None:
+                  raise SystemExit("release_cut_tag_raced_before_create")
+              request("POST", "/git/refs", {"ref": f"refs/tags/{release_tag}", "sha": release_source_sha})
+              action = "created"
+
+          readback = request("GET", tag_path)
+          if not isinstance(readback, dict):
+              raise SystemExit("release_cut_tag_readback_invalid")
+          ref_object = readback.get("object", {})
+          if ref_object.get("type") != "commit" or ref_object.get("sha") != release_source_sha:
+              raise SystemExit("release_cut_tag_readback_mismatch")
+
+          print(json.dumps({"action": action, "ref": f"refs/tags/{release_tag}", "source_sha": release_source_sha}, separators=(",", ":"), sort_keys=True))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"action={action}\n")
+          PY
+
+      - id: release
+        name: Locate normal tag-push publication run
+        shell: bash
+        env:
+          ACTIONS_READ_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import time
+          import urllib.parse
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          release_source_sha = os.environ["RELEASE_SOURCE_SHA"]
+          release_tag = os.environ["RELEASE_TAG"]
+          token = os.environ["ACTIONS_READ_TOKEN"]
+          if not token:
+              raise SystemExit("release_cut_actions_read_token_required")
+
+          query = urllib.parse.urlencode(
+              {"event": "push", "head_sha": release_source_sha, "per_page": "20"}
+          )
+          url = f"https://api.github.com/repos/{repository}/actions/workflows/release.yml/runs?{query}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "User-Agent": "StreamScapeTV-agent-state-dashboard-0.1.2-release-observer",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          observed = None
+          for attempt in range(90):
+              request = urllib.request.Request(url, headers=headers, method="GET")
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      payload = json.load(response)
+              except (OSError, ValueError):
+                  payload = {}
+              runs = payload.get("workflow_runs", []) if isinstance(payload, dict) else []
+              matches = [
+                  run
+                  for run in runs
+                  if isinstance(run, dict)
+                  and run.get("event") == "push"
+                  and run.get("head_sha") == release_source_sha
+                  and run.get("name") == "Publish tagged dashboard image and chart"
+                  and isinstance(run.get("id"), int)
+              ]
+              if matches:
+                  observed = max(matches, key=lambda item: item["id"])
+                  break
+              if attempt < 89:
+                  time.sleep(2)
+          if observed is None:
+              raise SystemExit("release_cut_publication_run_not_observed")
+
+          run_id = observed["id"]
+          evidence = {
+              "release_run_id": run_id,
+              "status": observed.get("status"),
+              "conclusion": observed.get("conclusion"),
+              "tag": release_tag,
+          }
+          print(json.dumps(evidence, separators=(",", ":"), sort_keys=True))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"run_id={run_id}\n")
+          PY
+
+      - name: Report bounded tag-cut evidence to issue 55
+        if: always()
+        continue-on-error: true
+        shell: bash
+        env:
+          ISSUE_COMMENT_TOKEN: ${{ github.token }}
+          ADMISSION_OUTCOME: ${{ steps.admit.outcome }}
+          TAG_OUTCOME: ${{ steps.tag.outcome }}
+          RELEASE_LOOKUP_OUTCOME: ${{ steps.release.outcome }}
+          SOURCE_VALIDATION_RUN: ${{ steps.admit.outputs.source_validation_run }}
+          CURRENT_MAIN_VALIDATION_RUN: ${{ steps.admit.outputs.current_main_validation_run }}
+          TAG_ACTION: ${{ steps.tag.outputs.action }}
+          RELEASE_RUN_ID: ${{ steps.release.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["ISSUE_COMMENT_TOKEN"]
+          if not token:
+              raise SystemExit("issue_comment_token_required")
+          body = (
+              "<!-- agent-state-dashboard-cut-release-0.1.2 -->\n"
+              f"0.1.2 tag-cutter run `{os.environ['GITHUB_RUN_ID']}`: "
+              f"admission=`{os.environ.get('ADMISSION_OUTCOME', '')}`, "
+              f"tag=`{os.environ.get('TAG_OUTCOME', '')}`, "
+              f"release_lookup=`{os.environ.get('RELEASE_LOOKUP_OUTCOME', '')}`, "
+              f"source_validation_run=`{os.environ.get('SOURCE_VALIDATION_RUN', '')}`, "
+              f"current_main_validation_run=`{os.environ.get('CURRENT_MAIN_VALIDATION_RUN', '')}`, "
+              f"tag_action=`{os.environ.get('TAG_ACTION', '')}`, "
+              f"release_run_id=`{os.environ.get('RELEASE_RUN_ID', '')}`, "
+              f"source=`{os.environ['RELEASE_SOURCE_SHA']}`."
+          )
+          payload = json.dumps({"body": body}, separators=(",", ":")).encode("utf-8")
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{repository}/issues/55/comments",
+              data=payload,
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "Content-Type": "application/json",
+                  "User-Agent": "StreamScapeTV-agent-state-dashboard-0.1.2-report",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+              method="POST",
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              if response.status not in {200, 201}:
+                  raise SystemExit("issue_comment_failed")
+          PY
