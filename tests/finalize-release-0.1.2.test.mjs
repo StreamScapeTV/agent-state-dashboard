@@ -1,11 +1,23 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+const workflowUrl = new URL("../.github/workflows/finalize-release-0.1.2.yml", import.meta.url);
+const driverUrl = new URL("../.github/scripts/finalize_release_0_1_2.py", import.meta.url);
 const [workflow, driver] = await Promise.all([
-  readFile(new URL("../.github/workflows/finalize-release-0.1.2.yml", import.meta.url), "utf8"),
-  readFile(new URL("../.github/scripts/finalize_release_0_1_2.py", import.meta.url), "utf8"),
+  readFile(workflowUrl, "utf8"),
+  readFile(driverUrl, "utf8"),
 ]);
+
+test("temporary Python finalizer driver parses without writing bytecode", () => {
+  const result = spawnSync(
+    "python3",
+    ["-c", "from pathlib import Path; compile(Path(__import__('sys').argv[1]).read_text(encoding='utf-8'), __import__('sys').argv[1], 'exec')", driverUrl.pathname],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
 
 test("finalizer uses the proven exact same-repository PR event", () => {
   assert.match(workflow, /^\s*pull_request:\s*$/m);
