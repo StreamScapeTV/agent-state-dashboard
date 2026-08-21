@@ -4,9 +4,10 @@ import test from "node:test";
 
 const clientSource = readFileSync(new URL("../lib/dashboard-supabase.ts", import.meta.url), "utf8");
 const dashboardSource = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
+const hookSource = readFileSync(new URL("../lib/use-dashboard-tables.ts", import.meta.url), "utf8");
 const typesSource = readFileSync(new URL("../types/dashboard.ts", import.meta.url), "utf8");
 
-const browserSources = `${clientSource}\n${dashboardSource}`;
+const browserSources = `${clientSource}\n${dashboardSource}\n${hookSource}`;
 
 const TABLES = [
   "current_projects",
@@ -27,31 +28,33 @@ test("browser Supabase client is same-origin and uses only a non-secret API-key-
   assert.doesNotMatch(browserSources, /https?:\/\/[^"'\s]*\.supabase\.(?:co|in)/i);
 });
 
-test("all five authority tables are read completely through the proxy-backed client", () => {
+test("all five authority tables are read completely and independently through the proxy-backed client", () => {
   for (const table of TABLES) assert.match(typesSource, new RegExp(`"${table}"`));
   assert.match(clientSource, /DASHBOARD_TABLES: readonly RawTableName\[\] = RAW_TABLE_NAMES/);
-  assert.match(clientSource, /DASHBOARD_TABLES\.map\(async \(table\) =>/);
+  assert.match(clientSource, /Promise\.allSettled\(/);
+  assert.match(clientSource, /DASHBOARD_TABLES\.map\(\(table\) => readDashboardTable\(client, table, options\)\)/);
   assert.match(clientSource, /client\.from\(table\)/);
   assert.match(clientSource, /select\("\*", \{ count: "exact" \}\)/);
   assert.match(clientSource, /query = query\.order\(column, \{ ascending: true \}\)/);
   assert.match(clientSource, /query\.range\(from, from \+ limit - 1\)/);
-  assert.match(dashboardSource, /readDashboardSnapshot\(client, \{ signal: controller\.signal \}\)/);
-  assert.match(dashboardSource, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
+  assert.match(hookSource, /readDashboardSnapshot\(client, \{ signal: controller\.signal \}\)/);
+  assert.match(hookSource, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
 });
 
-test("Realtime invalidation uses Postgres Changes on all current tables with polling fallback", () => {
+test("Realtime invalidation remains exact-five-table and uses scoped refresh with full polling convergence", () => {
   assert.match(clientSource, /client\.channel\("agent-state-dashboard-current"\)/);
   assert.match(clientSource, /"postgres_changes"/);
   assert.match(clientSource, /\{ event: "\*", schema: AGENT_STATE_SCHEMA, table \}/);
   assert.match(clientSource, /status === "SUBSCRIBED"/);
   assert.match(clientSource, /status === "CHANNEL_ERROR" \|\| status === "TIMED_OUT" \|\| status === "CLOSED"/);
-  assert.match(dashboardSource, /subscribeToDashboardChanges\(client, \{/);
-  assert.match(dashboardSource, /onInvalidate: \(\) => applyLiveEvent\("invalidate"\)/);
-  assert.match(dashboardSource, /window\.setInterval\(requestRefresh, POLL_INTERVAL_MS\)/);
+  assert.match(hookSource, /subscribeToDashboardChanges\(client, \{/);
+  assert.match(hookSource, /onInvalidate: \(table\) => \{/);
+  assert.match(hookSource, /queueTableRefresh\(table\)/);
+  assert.match(hookSource, /window\.setInterval\(\(\) => \{\s*void requestFullRefresh\(\);\s*\}, POLL_INTERVAL_MS\)/);
 });
 
 test("browser transport no longer depends on the local Node API or SSE endpoints", () => {
-  assert.doesNotMatch(dashboardSource, /\/api\/snapshot|\/api\/tables|new EventSource\(|["']\/events["']/);
+  assert.doesNotMatch(browserSources, /\/api\/snapshot|\/api\/tables|new EventSource\(|["']\/events["']/);
 });
 
 test("browser UI and data client remain mutation-free", () => {
