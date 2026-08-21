@@ -38,6 +38,7 @@ import {
 } from "@/lib/table-refresh-state";
 import type { DashboardSnapshot, RawTableName } from "@/types/dashboard";
 
+export const BOOTSTRAP_SUBSCRIBE_GRACE_MS = 750;
 export const RECOVERY_POLL_INTERVAL_MS = 5_000;
 export const STALE_AFTER_MS = 75_000;
 
@@ -161,6 +162,25 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
 
   useEffect(() => {
     const client = getDashboardSupabaseClient();
+    let bootstrapTimer: number | null = null;
+
+    const startBootstrap = (socketReadyAtStart: boolean) => {
+      if (bootstrapStartedRef.current) return;
+      bootstrapStartedRef.current = true;
+      if (bootstrapTimer !== null) {
+        window.clearTimeout(bootstrapTimer);
+        bootstrapTimer = null;
+      }
+      appendActivity(connectionActivity(new Date().toISOString(), "Bootstrap snapshot started"));
+      void requestFullRefresh("bootstrap").then(() => {
+        if (!socketReadyAtStart && socketLiveRef.current) {
+          setConnectionState("recovering");
+          appendActivity(connectionActivity(new Date().toISOString(), "Realtime joined after bootstrap start; reconciling"));
+          void requestFullRefresh("reconnect");
+        }
+      });
+    };
+
     const unsubscribe = subscribeToDashboardChanges(client, {
       onStatus: (status) => {
         const observedAt = new Date().toISOString();
@@ -177,13 +197,18 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
 
         const wasLive = socketLiveRef.current;
         socketLiveRef.current = true;
+        if (!bootstrapStartedRef.current) {
+          appendActivity(connectionActivity(observedAt, "Realtime subscribed; bootstrapping"));
+          startBootstrap(true);
+          return;
+        }
         if (!bootstrappedRef.current) {
           appendActivity(connectionActivity(observedAt, "Realtime subscribed during bootstrap"));
           return;
         }
         if (!wasLive) {
           setConnectionState("recovering");
-          appendActivity(connectionActivity(observedAt, "Realtime connected; reconciling"));
+          appendActivity(connectionActivity(observedAt, "Realtime reconnected; reconciling"));
           void requestFullRefresh("reconnect");
           return;
         }
@@ -192,12 +217,11 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
       onChange: applyLiveChange,
     });
 
-    bootstrapStartedRef.current = true;
-    appendActivity(connectionActivity(new Date().toISOString(), "Bootstrap snapshot started"));
-    void requestFullRefresh("bootstrap");
+    bootstrapTimer = window.setTimeout(() => startBootstrap(false), BOOTSTRAP_SUBSCRIBE_GRACE_MS);
 
     return () => {
       unsubscribe();
+      if (bootstrapTimer !== null) window.clearTimeout(bootstrapTimer);
       socketLiveRef.current = false;
       fullControllerRef.current?.abort();
       fullControllerRef.current = null;
@@ -210,7 +234,7 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
     if (!bootstrappedRef.current) return;
     if (connectionState !== "reconnecting" && connectionState !== "recovering") return;
     const poll = window.setInterval(() => {
-      void requestFullRefresh("recovery");
+      if (!reconcilingRef.current) void requestFullRefresh("recovery");
     }, RECOVERY_POLL_INTERVAL_MS);
     return () => window.clearInterval(poll);
   }, [connectionState, requestFullRefresh]);
