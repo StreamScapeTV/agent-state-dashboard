@@ -193,9 +193,19 @@ function AgentDetailDialog({ row, onClose }: { row: AgentViewRow | null; onClose
                 variant="outlined"
               />
               <Typography>
-                Assigned: {displayTime(row.promptAssignedAt)} · Returned: {displayTime(row.lastReturnedAt)} · Duration: {formatDuration(row.durationMs)}
+                Assigned: {displayTime(row.assignedAt)} · Returned: {displayTime(row.lastReturnedAt)} · Duration: {formatDuration(row.durationMs)}
               </Typography>
-              <LongText label="Current prompt" value={row.prompt} />
+              <Typography variant="caption" color="text.secondary">
+                Assignment timing: {row.assignmentAssignedAt ? "typed assignment" : row.promptAssignedAt ? "compatibility prompt" : "not observed"}
+              </Typography>
+              <LongText label="Current assignment" value={row.assignment?.instructions ?? null} />
+              {row.assignment?.context !== null && row.assignment?.context !== undefined ? (
+                <Box>
+                  <Typography variant="overline">Assignment context</Typography>
+                  <JsonPanel value={row.assignment.context} />
+                </Box>
+              ) : null}
+              <LongText label="Compatibility prompt" value={row.prompt} />
               <LongText label="Latest response" value={row.lastResponse} />
               <JsonPanel
                 value={{
@@ -407,7 +417,15 @@ function AgentTable({ rows, sortKey, sortDirection, sort, onView }: AgentTablePr
               </TableSortLabel>
             </TableCell>
             <TableCell>Current work / next action</TableCell>
-            <TableCell>Assigned</TableCell>
+            <TableCell>
+              <TableSortLabel
+                active={sortKey === "assigned"}
+                direction={dir("assigned")}
+                onClick={() => sort("assigned")}
+              >
+                Assigned
+              </TableSortLabel>
+            </TableCell>
             <TableCell>Returned</TableCell>
             <TableCell>
               <TableSortLabel
@@ -445,7 +463,7 @@ function AgentTable({ rows, sortKey, sortDirection, sort, onView }: AgentTablePr
                   </Typography>
                 ) : null}
               </TableCell>
-              <TableCell>{shortTime(row.promptAssignedAt)}</TableCell>
+              <TableCell>{shortTime(row.assignedAt)}</TableCell>
               <TableCell>{shortTime(row.lastReturnedAt)}</TableCell>
               <TableCell>{formatDuration(row.durationMs)}</TableCell>
               <TableCell>
@@ -571,7 +589,16 @@ export function DashboardClient() {
       )
       && (
         !needle
-        || [row.projectKey, row.identity, row.workSummary, row.nextAction ?? "", statusLabel(row)]
+        || [
+          row.projectKey,
+          row.identity,
+          row.assignment?.instructions ?? "",
+          row.assignment?.context === null || row.assignment?.context === undefined ? "" : pretty(row.assignment.context),
+          row.prompt ?? "",
+          row.workSummary,
+          row.nextAction ?? "",
+          statusLabel(row),
+        ]
           .join(" ")
           .toLowerCase()
           .includes(needle)
@@ -585,7 +612,7 @@ export function DashboardClient() {
       if (sortKey === "identity") value = a.identity.localeCompare(b.identity, undefined, { numeric: true });
       if (sortKey === "duration") value = (a.durationMs ?? -1) - (b.durationMs ?? -1);
       if (sortKey === "assigned") {
-        value = (Date.parse(a.promptAssignedAt ?? "") || 0) - (Date.parse(b.promptAssignedAt ?? "") || 0);
+        value = (Date.parse(a.assignedAt ?? "") || 0) - (Date.parse(b.assignedAt ?? "") || 0);
       }
       if (sortKey === "returned") {
         value = (Date.parse(a.lastReturnedAt ?? "") || 0) - (Date.parse(b.lastReturnedAt ?? "") || 0);

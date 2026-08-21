@@ -2,6 +2,7 @@ import type {
   AgentBaseStatus,
   AgentViewRow,
   CurrentAgentRecord,
+  CurrentAssignment,
   CurrentCoordinationRecord,
   CurrentProjectRecord,
   CurrentResourceRecord,
@@ -125,6 +126,16 @@ function parseProject(value: unknown): CurrentProjectRecord | null {
   };
 }
 
+function parseAssignment(value: unknown): CurrentAssignment | null {
+  if (!isObject(value)) return null;
+  const instructions = rawStringFrom(value, ["instructions"]);
+  if (instructions === null) return null;
+  return {
+    instructions,
+    context: "context" in value ? asJson(value.context) : null,
+  };
+}
+
 function parseAgent(value: unknown): CurrentAgentRecord | null {
   if (!isObject(value)) return null;
   const projectKey = stringFrom(value, ["project_key", "projectKey", "project"]);
@@ -133,8 +144,10 @@ function parseAgent(value: unknown): CurrentAgentRecord | null {
   return {
     projectKey,
     identity,
-    // Prompt/response are owner-visible authoritative text. Preserve their bytes
-    // instead of applying identifier/timestamp whitespace normalization.
+    // Assignment/prompt/response are owner-visible authoritative text. Preserve
+    // their bytes instead of applying identifier/timestamp whitespace normalization.
+    assignment: parseAssignment(valueFrom(value, ["assignment"])),
+    assignmentAssignedAt: stringFrom(value, ["assignment_assigned_at", "assignmentAssignedAt"]),
     prompt: rawStringFrom(value, ["prompt", "current_prompt", "currentPrompt"]),
     state: asJson(valueFrom(value, ["state", "actor_state", "actorState"]) ?? {}),
     promptAssignedAt: stringFrom(value, ["prompt_assigned_at", "promptAssignedAt"]),
@@ -272,11 +285,19 @@ export function normalizeSnapshot(input: unknown, nowIso = new Date().toISOStrin
   };
 }
 
+export function currentAssignedAt(
+  agent: Pick<CurrentAgentRecord, "assignmentAssignedAt" | "promptAssignedAt">,
+): string | null {
+  // Typed assignment observability is authoritative whenever it is present.
+  // Compatibility timing is only a fallback for rows that genuinely predate it.
+  return agent.assignmentAssignedAt ?? agent.promptAssignedAt;
+}
+
 export function deriveBaseStatus(
-  agent: Pick<CurrentAgentRecord, "promptAssignedAt" | "lastReturnedAt">,
+  agent: Pick<CurrentAgentRecord, "assignmentAssignedAt" | "promptAssignedAt" | "lastReturnedAt">,
   work: CurrentWorkRecord[],
 ): AgentBaseStatus {
-  const assignedAt = parseTimestamp(agent.promptAssignedAt);
+  const assignedAt = parseTimestamp(currentAssignedAt(agent));
   const returnedAt = parseTimestamp(agent.lastReturnedAt);
 
   if (assignedAt !== null) {
@@ -285,8 +306,8 @@ export function deriveBaseStatus(
   }
 
   // Rows that predate assignment observability deliberately keep NULL timestamps.
-  // Do not infer an active prompt from retained text; only current work can make
-  // such a row operationally active until a real future assignment is stamped.
+  // Do not infer an active assignment from retained text; only current work can
+  // make such a row operationally active until a real future assignment is stamped.
   if (work.length > 0) return "working";
   return "idle";
 }
@@ -296,12 +317,12 @@ export function isBlocked(agentState: JsonValue, work: CurrentWorkRecord[]): boo
 }
 
 export function durationMs(
-  promptAssignedAt: string | null,
+  assignedAtValue: string | null,
   lastReturnedAt: string | null,
   baseStatus: AgentBaseStatus,
   nowMs = Date.now(),
 ): number | null {
-  const assignedAt = parseTimestamp(promptAssignedAt);
+  const assignedAt = parseTimestamp(assignedAtValue);
   if (assignedAt === null) return null;
   const returnedAt = parseTimestamp(lastReturnedAt);
   const end = baseStatus === "returned" && returnedAt !== null && returnedAt >= assignedAt ? returnedAt : nowMs;
@@ -346,6 +367,7 @@ export function buildAgentRows(snapshot: DashboardSnapshot, nowMs = Date.now()):
     const work = indexed(workIndex, agent.projectKey, agent.identity);
     const resources = indexed(resourceIndex, agent.projectKey, agent.identity);
     const coordination = indexed(coordinationIndex, agent.projectKey, agent.identity);
+    const assignedAt = currentAssignedAt(agent);
     const baseStatus = deriveBaseStatus(agent, work);
     const blocked = isBlocked(agent.state, work);
     const workSummary =
@@ -365,9 +387,10 @@ export function buildAgentRows(snapshot: DashboardSnapshot, nowMs = Date.now()):
     return {
       ...agent,
       key: `${agent.projectKey}::${agent.identity}`,
+      assignedAt,
       baseStatus,
       blocked,
-      durationMs: durationMs(agent.promptAssignedAt, agent.lastReturnedAt, baseStatus, nowMs),
+      durationMs: durationMs(assignedAt, agent.lastReturnedAt, baseStatus, nowMs),
       work,
       resources,
       coordination,
@@ -380,7 +403,7 @@ export function buildAgentRows(snapshot: DashboardSnapshot, nowMs = Date.now()):
 
 export function refreshAgentDurations(rows: AgentViewRow[], nowMs = Date.now()): AgentViewRow[] {
   return rows.map((row) => {
-    const nextDuration = durationMs(row.promptAssignedAt, row.lastReturnedAt, row.baseStatus, nowMs);
+    const nextDuration = durationMs(row.assignedAt, row.lastReturnedAt, row.baseStatus, nowMs);
     return nextDuration === row.durationMs ? row : { ...row, durationMs: nextDuration };
   });
 }

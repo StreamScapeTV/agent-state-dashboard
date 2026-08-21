@@ -21,9 +21,16 @@ export interface CurrentProjectRecord {
   state: JsonValue;
 }
 
+export interface CurrentAssignment {
+  instructions: string;
+  context: JsonValue | null;
+}
+
 export interface CurrentAgentRecord {
   projectKey: string;
   identity: string;
+  assignment: CurrentAssignment | null;
+  assignmentAssignedAt: string | null;
   prompt: string | null;
   state: JsonValue;
   promptAssignedAt: string | null;
@@ -67,6 +74,7 @@ export type IdentityKind = "orchestrator" | "agent" | "codex" | "dependabot" | "
 
 export interface AgentViewRow extends CurrentAgentRecord {
   key: string;
+  assignedAt: string | null;
   baseStatus: AgentBaseStatus;
   blocked: boolean;
   durationMs: number | null;
