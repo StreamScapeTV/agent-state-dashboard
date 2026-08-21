@@ -133,7 +133,7 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
         }
         return next;
       });
-      if (reason !== "bootstrap") setConnectionState(socketLiveRef.current ? "recovering" : "reconnecting");
+      setConnectionState(socketLiveRef.current ? "recovering" : "reconnecting");
       return false;
     } finally {
       if (fullControllerRef.current === controller) {
@@ -227,6 +227,8 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
       fullControllerRef.current = null;
       reconcilingRef.current = false;
       bufferedChangesRef.current = [];
+      bootstrapStartedRef.current = false;
+      bootstrappedRef.current = false;
     };
   }, [appendActivity, applyLiveChange, requestFullRefresh]);
 
