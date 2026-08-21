@@ -91,6 +91,11 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
   }, []);
 
   const requestFullRefresh = useCallback(async () => {
+    if (invalidationTimerRef.current !== null) {
+      window.clearTimeout(invalidationTimerRef.current);
+      invalidationTimerRef.current = null;
+    }
+    pendingInvalidationsRef.current.clear();
     fullControllerRef.current?.abort();
     for (const table of DASHBOARD_TABLES) {
       tableControllersRef.current[table]?.abort();
@@ -171,6 +176,7 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
   const anyData = hasAnyTableData(tableStates);
   const anyLoading = hasAnyTableLoading(tableStates);
   const successAt = latestTableSuccessAt(tableStates);
+  const freshness = dashboardFreshness(tableStates, nowMs, STALE_AFTER_MS);
   const snapshot = useMemo(() => {
     if (!anyData) return null;
     return normalizeSnapshot({
@@ -183,9 +189,9 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
     tableStates,
     snapshot,
     connectionState,
-    freshness: dashboardFreshness(tableStates, nowMs, STALE_AFTER_MS),
+    freshness,
     lastRefresh: successAt ? new Date(successAt) : null,
-    loading: !anyData && anyLoading,
+    loading: !anyData && freshness === "loading",
     refreshing: anyData && anyLoading,
     issueTables: tableIssues(tableStates),
     requestFullRefresh,
