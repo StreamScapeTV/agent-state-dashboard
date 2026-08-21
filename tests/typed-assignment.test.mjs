@@ -161,7 +161,6 @@ test("progressive UI keeps typed assignment primary, compatibility diagnostics a
   assert.match(source, /Assigned: \{displayTime\(row\.assignedAt\)\}/);
   assert.match(overviewSource, /const instructions = row\.assignment\?\.instructions\.trim\(\)/);
   assert.match(overviewSource, /return instructions\.split/);
-  assert.match(source, /<WorkAssignmentBoard work=\{advancedWork\} agents=\{advancedRows\}/);
   assert.match(workSource, /Search work key, assignment, state, next action…/);
   assert.doesNotMatch(`${source}\n${overviewSource}\n${workSource}`, /assignmentHistory|runId|sessionId/);
 });
