@@ -1,4 +1,4 @@
-import type { AgentViewRow, CurrentCoordinationRecord } from "@/types/dashboard";
+import type { AgentViewRow, CurrentCoordinationRecord, IdentityKind } from "@/types/dashboard";
 
 export interface AttentionQueueItem {
   row: AgentViewRow;
@@ -8,6 +8,17 @@ export interface AttentionQueueItem {
 
 function coordinationKey(item: CurrentCoordinationRecord): string {
   return `${item.projectKey}::${item.sender}::${item.recipient}::${JSON.stringify(item.state)}`;
+}
+
+export function filterAttentionRows(
+  rows: AgentViewRow[],
+  projectFilter: string,
+  identityFilter: IdentityKind | "all",
+): AgentViewRow[] {
+  return rows.filter((row) =>
+    (projectFilter === "all" || row.projectKey === projectFilter)
+    && (identityFilter === "all" || row.identityKind === identityFilter),
+  );
 }
 
 export function actionableCoordinationFor(
