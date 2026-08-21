@@ -29,6 +29,7 @@ import { useMemo, useState } from "react";
 import {
   buildCoordinationItems,
   coordinationCounts,
+  dedupeCurrentCoordination,
   filterCoordinationItems,
   type CoordinationBoardItem,
   type CoordinationDirection,
@@ -36,7 +37,7 @@ import {
 import type { AgentViewRow, CurrentCoordinationRecord } from "@/types/dashboard";
 
 interface CoordinationBoardProps {
-  coordination: CurrentCoordinationRecord[];
+  coordination?: CurrentCoordinationRecord[];
   agents: AgentViewRow[];
   onView: (key: string) => void;
 }
@@ -64,7 +65,14 @@ export function CoordinationBoard({ coordination, agents, onView }: Coordination
   const [query, setQuery] = useState("");
   const [rawItem, setRawItem] = useState<CoordinationBoardItem | null>(null);
 
-  const items = useMemo(() => buildCoordinationItems(coordination, agents), [coordination, agents]);
+  const currentCoordination = useMemo(
+    () => coordination ?? dedupeCurrentCoordination(agents),
+    [coordination, agents],
+  );
+  const items = useMemo(
+    () => buildCoordinationItems(currentCoordination, agents),
+    [currentCoordination, agents],
+  );
   const filtered = useMemo(
     () => filterCoordinationItems(items, { direction, identity, project, query }),
     [items, direction, identity, project, query],
