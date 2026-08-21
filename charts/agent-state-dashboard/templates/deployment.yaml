@@ -51,21 +51,23 @@ spec:
                   name: {{ .Values.supabase.existingSecret.name | quote }}
                   key: {{ .Values.supabase.existingSecret.secretKeyKey | quote }}
           ports:
-            - name: http
-              containerPort: 8080
+            - name: https
+              containerPort: 8443
               protocol: TCP
           readinessProbe:
             httpGet:
+              scheme: HTTPS
               path: /healthz
-              port: http
+              port: https
             initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
             timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
             failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
           livenessProbe:
             httpGet:
+              scheme: HTTPS
               path: /healthz
-              port: http
+              port: https
             initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
             timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
@@ -75,10 +77,22 @@ spec:
           volumeMounts:
             - name: runtime-tmp
               mountPath: /tmp
+            - name: runtime-tls
+              mountPath: /tls
+              readOnly: true
       volumes:
         - name: runtime-tmp
           emptyDir:
             sizeLimit: 32Mi
+        - name: runtime-tls
+          secret:
+            secretName: {{ .Values.tls.existingSecret.name | quote }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.tls.existingSecret.certKey | quote }}
+                path: tls.crt
+              - key: {{ .Values.tls.existingSecret.keyKey | quote }}
+                path: tls.key
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

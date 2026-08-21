@@ -44,7 +44,7 @@ const nodeVersion = nodeVersionSource.trim();
 const chartVersion = chart.match(/^version:\s*([^\s]+)$/m)?.[1];
 const chartAppVersion = chart.match(/^appVersion:\s*["']?([^"'\s]+)["']?$/m)?.[1];
 
-test("container builds with Node but runs only pinned NGINX", () => {
+test("container builds with Node and runs only pinned TLS NGINX", () => {
   assert.match(dockerfile, new RegExp(`ARG NODE_VERSION=${nodeVersion.replaceAll(".", "\\.")}`));
   const pinnedNodeBases = dockerfile.match(
     /FROM docker\.io\/library\/node:\$\{NODE_VERSION\}-alpine@sha256:1b2479dd35a99687d6638f5976fd235e26c5b37e8122f786fcd5fe231d63de5b/g,
@@ -64,15 +64,22 @@ test("container builds with Node but runs only pinned NGINX", () => {
   assert.match(dockerfile, /COPY docker\/nginx\.conf \/etc\/nginx\/templates\/nginx\.conf\.template/);
   assert.match(dockerfile, /COPY docker\/security-headers\.conf \/etc\/nginx\/security-headers\.conf/);
   assert.match(dockerfile, /USER 101/);
-  assert.match(dockerfile, /EXPOSE 8080/);
+  assert.match(dockerfile, /EXPOSE 8443/);
+  assert.doesNotMatch(dockerfile, /EXPOSE 8080/);
   assert.match(dockerfile, /HEALTHCHECK[^\n]*--interval=30s/);
-  assert.match(dockerfile, /127\.0\.0\.1:8080\/healthz/);
+  assert.match(dockerfile, /--no-check-certificate/);
+  assert.match(dockerfile, /https:\/\/127\.0\.0\.1:8443\/healthz/);
+  assert.doesNotMatch(dockerfile, /http:\/\/127\.0\.0\.1:8080\/healthz/);
   assert.match(dockerfile, /STOPSIGNAL SIGQUIT/);
   assert.doesNotMatch(dockerfile, /npm ci --omit=dev|\/app\/server|opt\/dashboard\/server|tini|AS runtime[\s\S]*FROM node/);
   assert.doesNotMatch(dockerfile, /COPY[^\n]*server\//);
 
   assert.match(entrypoint, /SUPABASE_URL must be supplied by the Kubernetes Secret/);
   assert.match(entrypoint, /SUPABASE_SECRET_KEY must be supplied by the Kubernetes Secret/);
+  assert.match(entrypoint, /tls_cert="\/tls\/tls\.crt"/);
+  assert.match(entrypoint, /tls_key="\/tls\/tls\.key"/);
+  assert.match(entrypoint, /TLS certificate must be mounted/);
+  assert.match(entrypoint, /TLS private key must be mounted/);
   assert.match(entrypoint, /\^https\?\:\/\//);
   assert.match(entrypoint, /A-Za-z0-9\._-/);
   assert.match(entrypoint, /SUPABASE_URL="\$\{SUPABASE_URL%\/\}"/);
@@ -82,6 +89,7 @@ test("container builds with Node but runs only pinned NGINX", () => {
   assert.match(entrypoint, /\/tmp\/nginx\/client_temp/);
   assert.match(entrypoint, /\/tmp\/nginx\/proxy_temp/);
   assert.match(entrypoint, /unset SUPABASE_URL SUPABASE_SECRET_KEY/);
+  assert.match(entrypoint, /nginx -t -c "\$\{nginx_config\}"/);
   assert.match(entrypoint, /exec nginx -c "\$\{nginx_config\}" -g 'daemon off;'/);
   assert.doesNotMatch(entrypoint, /SERVER_ENTRYPOINT|SERVER_PORT|\bnode\b|kill -TERM|\bwait\b/);
 
@@ -97,8 +105,14 @@ test("static build identity rotates with the release version before immutable ca
   assert.doesNotMatch(nextConfigSource, /agent-state-dashboard-static/);
 });
 
-test("NGINX exposes only the five-table read gateway plus Realtime and static UI", () => {
+test("NGINX terminates mandatory TLS and exposes only the five-table gateway plus Realtime and static UI", () => {
   assert.match(nginx, /^worker_processes 1;$/m);
+  assert.match(nginx, /listen 8443 ssl;/);
+  assert.match(nginx, /listen \[::\]:8443 ssl;/);
+  assert.match(nginx, /ssl_certificate \/tls\/tls\.crt;/);
+  assert.match(nginx, /ssl_certificate_key \/tls\/tls\.key;/);
+  assert.match(nginx, /ssl_protocols TLSv1\.2 TLSv1\.3;/);
+  assert.doesNotMatch(nginx, /listen 8080/);
   assert.match(nginx, /location = \/healthz/);
   assert.match(nginx, /return 200 "ok\\n"/);
   assert.doesNotMatch(nginx, /dashboard_server|127\.0\.0\.1:8788|location \/api\/|location = \/events/);
@@ -164,13 +178,20 @@ test("retired Cloudflare Pages headers cannot be copied back into the static exp
   );
 });
 
-test("Helm defaults use the exact existing Secret and Tailscale contract", () => {
+test("Helm defaults require TLS and preserve the existing Supabase and Tailscale contracts", () => {
   assert.equal(chartVersion, packageJson.version);
   assert.equal(chartAppVersion, packageJson.version);
   assert.equal(chartValuesSchema.$schema, "http://json-schema.org/draft-07/schema#");
+  assert.match(values, /repository: ghcr\.io\/streamscapetv\/agent-state-dashboard/);
+  assert.match(values, /service:\s*\n\s*port: 443/);
   assert.match(values, /name: agent-state-dashboard-supabase/);
   assert.match(values, /urlKey: SUPABASE_URL/);
   assert.match(values, /secretKeyKey: SUPABASE_SECRET_KEY/);
+  assert.match(values, /tls:\s*\n\s*existingSecret:/);
+  assert.match(values, /name: agent-state-dashboard-tls/);
+  assert.match(values, /certKey: tls\.crt/);
+  assert.match(values, /keyKey: tls\.key/);
+  assert.doesNotMatch(values, /tls:\s*\n\s*enabled:/);
   assert.match(values, /hostname: agent-state-dashboard/);
   assert.match(values, /- tag:agent-state-dashboard/);
   assert.match(values, /proxyGroup: tailscale-proxy-group/);
@@ -181,9 +202,11 @@ test("Helm defaults use the exact existing Secret and Tailscale contract", () =>
   assert.match(service, /tailscale\.com\/hostname/);
   assert.match(service, /tailscale\.com\/tags/);
   assert.match(service, /tailscale\.com\/proxy-group/);
+  assert.match(service, /name: https/);
+  assert.match(service, /targetPort: https/);
 });
 
-test("Helm schema models the complete public values surface and locks security invariants", () => {
+test("Helm schema models mandatory TLS plus the complete public values surface", () => {
   const properties = chartValuesSchema.properties ?? {};
   const image = properties.image;
   const imagePullSecret = properties.imagePullSecrets?.items;
@@ -191,10 +214,13 @@ test("Helm schema models the complete public values surface and locks security i
   const tailscale = properties.tailscale;
   const supabase = properties.supabase;
   const existingSecret = supabase?.properties?.existingSecret;
+  const tls = properties.tls;
+  const tlsExistingSecret = tls?.properties?.existingSecret;
   const podSecurity = properties.podSecurityContext;
   const containerSecurity = properties.securityContext;
 
   assert.equal(chartValuesSchema.additionalProperties, false);
+  assert.ok(chartValuesSchema.required.includes("tls"));
   assert.deepEqual(
     Object.keys(properties).sort(),
     [
@@ -215,6 +241,7 @@ test("Helm schema models the complete public values surface and locks security i
       "supabase",
       "tailscale",
       "terminationGracePeriodSeconds",
+      "tls",
       "tolerations",
     ],
   );
@@ -229,6 +256,14 @@ test("Helm schema models the complete public values surface and locks security i
     Object.keys(existingSecret?.properties ?? {}).sort(),
     ["name", "secretKeyKey", "urlKey"],
   );
+  assert.equal(tls?.additionalProperties, false);
+  assert.deepEqual(Object.keys(tls?.properties ?? {}), ["existingSecret"]);
+  assert.equal(tlsExistingSecret?.additionalProperties, false);
+  assert.deepEqual(
+    Object.keys(tlsExistingSecret?.properties ?? {}).sort(),
+    ["certKey", "keyKey", "name"],
+  );
+  assert.deepEqual(tlsExistingSecret?.required?.slice().sort(), ["certKey", "keyKey", "name"]);
   assert.equal(podSecurity?.properties?.runAsNonRoot?.const, true);
   assert.equal(podSecurity?.properties?.runAsUser?.const, 1000);
   assert.equal(podSecurity?.properties?.runAsGroup?.const, 1000);
@@ -240,17 +275,28 @@ test("Helm schema models the complete public values surface and locks security i
   assert.equal(containerSecurity?.properties?.capabilities?.properties?.drop?.items?.const, "ALL");
 });
 
-test("Helm workload matches the pure-NGINX runtime and keeps bounded security", () => {
+test("Helm workload mounts mandatory TLS and keeps the pure-NGINX security boundary", () => {
   assert.match(deployment, /secretKeyRef:/);
   assert.match(deployment, /name: SUPABASE_URL/);
   assert.match(deployment, /name: SUPABASE_SECRET_KEY/);
   assert.doesNotMatch(deployment, /name: (?:SERVER_HOST|SERVER_PORT|HOST|PORT)\b/);
   assert.doesNotMatch(deployment, /127\.0\.0\.1:8788|value: "8788"/);
-  assert.match(deployment, /containerPort: 8080/);
+  assert.match(deployment, /name: https\s*\n\s*containerPort: 8443/);
+  assert.doesNotMatch(deployment, /containerPort: 8080/);
   assert.match(deployment, /readinessProbe:/);
   assert.match(deployment, /livenessProbe:/);
+  assert.equal((deployment.match(/scheme: HTTPS/g) ?? []).length, 2);
   assert.match(deployment, /path: \/healthz/);
   assert.match(deployment, /mountPath: \/tmp/);
+  assert.match(deployment, /mountPath: \/tls/);
+  assert.match(deployment, /readOnly: true/);
+  assert.match(deployment, /name: runtime-tls/);
+  assert.match(deployment, /secretName: \{\{ \.Values\.tls\.existingSecret\.name \| quote \}\}/);
+  assert.match(deployment, /key: \{\{ \.Values\.tls\.existingSecret\.certKey \| quote \}\}/);
+  assert.match(deployment, /path: tls\.crt/);
+  assert.match(deployment, /key: \{\{ \.Values\.tls\.existingSecret\.keyKey \| quote \}\}/);
+  assert.match(deployment, /path: tls\.key/);
+  assert.doesNotMatch(deployment, /if \.Values\.tls/);
   assert.match(deployment, /emptyDir:/);
   assert.match(deployment, /sizeLimit: 32Mi/);
   assert.match(deployment, /resources:/);
@@ -261,6 +307,7 @@ test("Helm workload matches the pure-NGINX runtime and keeps bounded security", 
   assert.match(deployment, /image: "\{\{ \.Values\.image\.repository \}\}@\{\{ \.Values\.image\.digest \}\}"/);
   assert.match(values, /readOnlyRootFilesystem: true/);
   assert.doesNotMatch(deployment, /value:\s*['"]?https?:\/\/[^\s]+supabase/);
+  assert.doesNotMatch(deployment, /tls-proxy|sidecar/);
 });
 
 test("release is a thin public GitHub-hosted exact-tag Central caller", () => {

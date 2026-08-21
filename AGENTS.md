@@ -38,35 +38,51 @@ Cloudflare Pages, Pages Functions, advanced-mode Workers, and the former Pages r
 - Material UI
 - `@supabase/supabase-js` in the browser, pointed only at the same-origin `/supabase` gateway
 - Node.js as a build/development/validation tool only; in the container image it appears only in the build stage and is never a deployed runtime dependency
-- digest-pinned NGINX as the sole deployed application runtime on port `8080`
+- digest-pinned NGINX as the sole deployed application runtime, terminating mandatory TLS on non-root port `8443`
 - multi-stage Docker/OCI image with no Node runtime dependency
 - versioned OCI Helm chart under `charts/agent-state-dashboard`
 - private K3s deployment controlled by Flux
 - committed `package-lock.json`; generated `out/` is ignored and produced during builds
 
-Completed #31/#32 established the pure-NGINX same-origin gateway and browser client. Issue #7 owns remaining release/package finalization for the next release. Flux #288 owns actual cluster desired state, Secret material, exposure, reconciliation, and live rollout.
+Completed #31/#32 established the pure-NGINX same-origin gateway and browser client. Issue #7 owns remaining release/package finalization. Flux #288 owns actual cluster desired state, Supabase/TLS Secret material, certificate issuance, exposure, reconciliation, and live rollout.
 
 ## Runtime and Helm contract
 
-The container listens on port `8080` and NGINX serves the health endpoint directly at `GET /healthz`. There is no secondary application listener.
+The container listens only on HTTPS port `8443`. NGINX terminates TLS directly and serves the health endpoint at `GET https://<host>:8443/healthz`; there is no plaintext application listener and no secondary application container/listener.
+
+TLS is mandatory. The runtime requires readable certificate and private-key files at:
+
+- `/tls/tls.crt`
+- `/tls/tls.key`
+
+The runtime entrypoint fails closed when those files are missing, empty, unreadable, malformed, or mismatched. The rendered NGINX configuration is validated against the mounted TLS material before NGINX starts. There is intentionally no no-TLS fallback mode.
 
 The image contract is intentionally split:
 
 - build stage: digest-pinned Node `22.18.0`, committed npm lockfile, deterministic Next static export;
 - runtime stage: digest-pinned NGINX `1.29.8`, non-root UID, exported frontend plus NGINX gateway configuration only.
 
-The runtime must not require `node`, `npm`, `server/`, `tini`, another process supervisor, or loopback application ports.
+The runtime must not require `node`, `npm`, `server/`, `tini`, another process supervisor, a TLS sidecar, or loopback application ports.
 
-The chart consumes the existing Secret contract only:
+The chart consumes two existing Secret contracts.
 
-- Secret name: `agent-state-dashboard-supabase`
+Supabase runtime Secret:
+
+- default Secret name: `agent-state-dashboard-supabase`
 - URL key: `SUPABASE_URL`
 - secret-key key: `SUPABASE_SECRET_KEY`
 
-The chart references these values with `secretKeyRef`; credential material never belongs in Helm values, rendered documentation, release evidence, or repository source.
+Mandatory TLS Secret:
+
+- default Secret name: `agent-state-dashboard-tls`
+- certificate key: `tls.crt`
+- private-key key: `tls.key`
+
+The chart mounts the TLS Secret read-only at `/tls`, maps its configured keys to the stable runtime paths above, and references Supabase values with `secretKeyRef`. Credential and private-key material never belongs in Helm values, rendered documentation, release evidence, or repository source. Flux/cert-manager owns creation of the real domain certificate Secret.
 
 The current producer-chart private Service defaults remain:
 
+- HTTPS port `443` targeting container port `8443` named `https`
 - `type: LoadBalancer`
 - `loadBalancerClass: tailscale`
 - `allocateLoadBalancerNodePorts: false`
@@ -74,19 +90,19 @@ The current producer-chart private Service defaults remain:
 - `tailscale.com/tags: tag:agent-state-dashboard`
 - `tailscale.com/proxy-group: tailscale-proxy-group`
 
-These are producer-chart defaults, not live-cluster authority. Flux #288 owns the actual image/chart selection, encrypted Secret, image-pull credentials, Tailscale settings, any owner-approved Cloudflare exposure, rollout, health verification, and rollback.
+These are producer-chart defaults, not live-cluster authority. Flux #288 owns the actual image/chart selection, encrypted Secrets, cert-manager `Certificate`, Tailscale settings, any owner-approved Cloudflare/ExternalDNS exposure, rollout, health verification, and rollback.
 
 Do not add a public Ingress, public credential-bearing chart value, Cloudflare runtime dependency, or repository-driven cluster deployment without a separately reviewed product change.
 
 ## Same-origin Supabase gateway contract
 
-The gateway is deliberately narrower than Supabase itself.
+The gateway is deliberately narrower than Supabase itself and is served only over the mandatory HTTPS listener.
 
 REST:
 
 - browser prefix: `/supabase/rest/v1/`;
 - allowed tables: exactly the five current authority tables listed above;
-- methods: only `GET`, `HEAD`, `OPTIONS`;
+- methods: only `GET`, `HEAD`, and `OPTIONS`;
 - generic REST root or any other table path returns `404`;
 - mutation methods return `405`;
 - browser API-key query parameters are rejected;
@@ -121,7 +137,7 @@ helm lint charts/agent-state-dashboard
 helm template agent-state-dashboard charts/agent-state-dashboard
 ```
 
-The package tests are authoritative for the current pure-NGINX boundary: build-time-only Node, pinned NGINX runtime, exact `/supabase` REST/Realtime proxy, Secret references, Tailscale metadata, probes/resources/security posture, source package/chart consistency, and the repository release caller.
+The package tests are authoritative for the current pure-NGINX boundary: build-time-only Node, pinned mandatory-TLS NGINX runtime, HTTPS-only listener, mounted TLS Secret contract, exact `/supabase` REST/Realtime proxy, Supabase Secret references, Tailscale metadata, probes/resources/security posture, source package/chart consistency, and the repository release caller.
 
 Documentation-only changes do not manufacture product-build, image, Helm, deployment, or live-cluster evidence. Runtime, integration, container, publication, deployment, and release evidence remain distinct product proofs tied to the exact source revision under test.
 
@@ -153,7 +169,7 @@ The Git tag is the release-version authority. Do **not** require a release-only 
 Publication and deployment are separate authorities:
 
 - this repository owns the human product tag, producer image/chart publication, public remote read-back, and release evidence;
-- Flux #288 owns encrypted runtime Secret material, any required pull configuration, Tailscale/Cloudflare exposure, cluster desired state, reconciliation, rollout, live health proof, and rollback.
+- Flux #288 owns encrypted runtime/TLS Secret material, certificate issuance, any required pull configuration, Tailscale/Cloudflare exposure, cluster desired state, reconciliation, rollout, live health proof, and rollback.
 
 Historical tags are immutable. Never move, delete, recreate, republish, or redefine `0.1.0`, `0.1.2`, or the first public-release tag `1.0.0`. The historical `0.1.2` recovery attempt is not part of the normal release path and must not be used as a template for future releases.
 
