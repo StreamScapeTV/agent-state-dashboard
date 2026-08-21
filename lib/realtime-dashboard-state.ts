@@ -18,9 +18,12 @@ export interface DashboardActivityItem {
   summary: string;
   table?: RawTableName;
   eventType?: DashboardRealtimeEventType;
+  projectKey?: string;
+  identities?: string[];
+  rowKey?: string;
 }
 
-export const ACTIVITY_LIMIT = 12;
+export const ACTIVITY_LIMIT = 50;
 
 const TABLE_KEY_FIELDS: Record<RawTableName, readonly string[]> = {
   current_projects: ["project_key"],
@@ -34,6 +37,28 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function stringField(row: Record<string, unknown> | null, key: string): string | null {
+  const value = row?.[key];
+  if (value === null || value === undefined) return null;
+  const rendered = String(value).trim();
+  return rendered.length > 0 ? rendered : null;
+}
+
+function activityRow(change: DashboardRealtimeChange): Record<string, unknown> | null {
+  return change.eventType === "DELETE"
+    ? change.oldRow ?? change.newRow
+    : change.newRow ?? change.oldRow;
+}
+
+function activityIdentities(row: Record<string, unknown> | null): string[] {
+  const identities = [
+    stringField(row, "agent"),
+    stringField(row, "sender"),
+    stringField(row, "recipient"),
+  ].filter((value): value is string => value !== null);
+  return [...new Set(identities)];
 }
 
 export function realtimeRowKey(table: RawTableName, value: unknown): string | null {
@@ -139,22 +164,25 @@ function activityId(observedAt: string, suffix: string): string {
 }
 
 export function activityFromRealtimeChange(change: DashboardRealtimeChange): DashboardActivityItem {
-  const rowKey = realtimeRowKey(
-    change.table,
-    change.eventType === "DELETE" ? change.oldRow ?? change.newRow : change.newRow ?? change.oldRow,
-  );
+  const row = activityRow(change);
+  const rowKey = realtimeRowKey(change.table, row);
   const label = change.table.replace("current_", "");
   const verb = change.eventType === "INSERT"
     ? "created"
     : change.eventType === "DELETE"
       ? "removed"
       : "updated";
+  const projectKey = stringField(row, "project_key");
+  const identities = activityIdentities(row);
   return {
     id: activityId(change.observedAt, `${change.table}:${change.eventType}:${rowKey ?? "unknown"}`),
     observedAt: change.observedAt,
     kind: "change",
     table: change.table,
     eventType: change.eventType,
+    ...(projectKey ? { projectKey } : {}),
+    ...(identities.length > 0 ? { identities } : {}),
+    ...(rowKey ? { rowKey } : {}),
     summary: `${label} ${rowKey ?? "unknown row"} ${verb}`,
   };
 }
