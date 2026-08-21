@@ -69,8 +69,9 @@ concurrency:
 jobs:
   source:
     name: Admit exact dashboard source
-    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-resolve-source.yml@0a47f98b2c581ae899e5a87394614846eb017713
+    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-resolve-source.yml@main
     with:
+      execution_backend: github-hosted
       source_mode: ${{ github.event_name == 'pull_request' && 'pr-head' || github.event_name == 'push' && 'push' || 'manual' }}
       requested_sha: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || '' }}
       expected_branch: main
@@ -78,8 +79,9 @@ jobs:
   validate:
     name: CI / Node validation
     needs: source
-    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-node.yml@0a47f98b2c581ae899e5a87394614846eb017713
+    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-node.yml@main
     with:
+      execution_backend: github-hosted
       admitted_sha: ${{ needs.source.outputs.source_sha }}
       validation_profile: frontend-contract-static
       version_file: .nvmrc
