@@ -20,9 +20,6 @@ import {
   Typography,
 } from "@mui/material";
 import { useMemo, useState } from "react";
-import { CoordinationBoard } from "@/components/CoordinationBoard";
-import { ResourcesCapacityBoard } from "@/components/ResourcesCapacityBoard";
-import { WorkAssignmentBoard } from "@/components/WorkAssignmentBoard";
 import { buildAttentionQueue, filterAttentionRows } from "@/lib/attention-inbox";
 import { formatDuration, statusLabel } from "@/lib/dashboard-model";
 import type { AgentViewRow, IdentityKind } from "@/types/dashboard";
@@ -85,10 +82,8 @@ export function AttentionInbox({
     [filteredRows, recipient],
   );
 
-  const currentWork = useMemo(() => rows.flatMap((row) => row.work), [rows]);
-
   return (
-    <Paper variant="outlined" sx={{ mb: 2 }}>
+    <Paper variant="outlined">
       <Stack
         direction={{ xs: "column", md: "row" }}
         sx={{ gap: 1, p: 1.5, alignItems: { md: "center" }, justifyContent: "space-between" }}
@@ -118,10 +113,10 @@ export function AttentionInbox({
 
       {items.length === 0 ? (
         <Typography sx={{ px: 1.5, pb: 1.5 }} color="text.secondary">
-          No current actors match the attention queue for these filters.
+          No current actors match the attention queue for this scope.
         </Typography>
       ) : (
-        <TableContainer sx={{ maxHeight: 330 }}>
+        <TableContainer sx={{ maxHeight: 420 }}>
           <Table size="small" stickyHeader aria-label="Needs attention queue">
             <TableHead>
               <TableRow>
@@ -147,6 +142,11 @@ export function AttentionInbox({
                   </TableCell>
                   <TableCell sx={{ maxWidth: 280 }}>
                     <Typography noWrap>{assignmentPreview(row)}</Typography>
+                    {row.blocked ? (
+                      <Typography variant="caption" color="warning.main" noWrap>
+                        {row.blockerCues[0]?.reason ?? "Blocked reason not recorded"}
+                      </Typography>
+                    ) : null}
                   </TableCell>
                   <TableCell>
                     <Typography variant="caption">{ageLabel(row, nowMs)}</Typography>
@@ -182,10 +182,6 @@ export function AttentionInbox({
           </Table>
         </TableContainer>
       )}
-
-      <WorkAssignmentBoard work={currentWork} agents={rows} onView={onView} />
-      <CoordinationBoard agents={rows} onView={onView} />
-      <ResourcesCapacityBoard rows={rows} onView={onView} />
     </Paper>
   );
 }
