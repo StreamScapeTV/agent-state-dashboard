@@ -45,7 +45,7 @@ The image build has two distinct roles:
 
 The runtime listens on port `8080`, serves `/healthz` directly, runs as a non-root user, and has no Node executable requirement, npm lifecycle, local API process, or process supervisor. Kubernetes uses a read-only root filesystem with a bounded writable `/tmp` volume for NGINX state and the rendered secret-bearing configuration.
 
-`/_next/static/*` receives immutable long-lived caching. The Next build ID is derived from the `package.json` release version so build-scoped assets move to a new immutable URL namespace on every versioned release. Other frontend routes fall back to `index.html` so the single-screen client remains navigable.
+`/_next/static/*` receives immutable long-lived caching. The Next build ID is derived from the checked-in package metadata for deterministic build-scoped assets; it is not the producer release-version authority. Public release identity comes from the immutable human Git tag described below.
 
 `out/` is generated during builds and is intentionally ignored. Never commit a prebuilt browser/runtime deployment artifact.
 
@@ -112,30 +112,55 @@ helm lint charts/agent-state-dashboard
 helm template agent-state-dashboard charts/agent-state-dashboard
 ```
 
-The package tests cover the build-time-only Node boundary, pinned NGINX runtime, exact same-origin REST/Realtime gateway, Secret references, Tailscale metadata, probes/resources/security posture, release-version alignment, and the central release caller.
+The package tests cover the build-time-only Node boundary, pinned NGINX runtime, exact same-origin REST/Realtime gateway, Secret references, Tailscale metadata, probes/resources/security posture, tag-driven release projection, and the central release caller.
 
 Documentation-only changes do not manufacture product-build evidence. Release, container, deployment, and live-cluster evidence remain separate proofs tied to the exact source revision being released.
 
-## Immutable release authority
+## Public release authority
 
-The repository-owned `.github/workflows/release.yml` remains the final release entrypoint. Product-specific runner labels, container-engine policy, or deployment logic do not belong in that workflow; it should call reviewed generic central CI/release capabilities and pass only the bounded producer inputs and named registry credentials required for publication. Flux, not the producer workflow, owns deployment.
-
-`0.1.0` is an immutable historical release identity. It must never be republished, retagged, or redefined as the pure-NGINX release. The next pure-NGINX release authority is **`0.1.1`**. Before a `0.1.1` tag is created, the normal release work must make these four values identical:
-
-- Git tag `0.1.1`;
-- `package.json` `version` `0.1.1`;
-- `charts/agent-state-dashboard/Chart.yaml` `version` `0.1.1`;
-- `charts/agent-state-dashboard/Chart.yaml` `appVersion` `0.1.1`.
-
-The current source may continue to report `0.1.0` until the separately owned release/version change is finalized; documentation does not perform that bump.
-
-The required publication target for the current Debian/K3s environment is **`linux/amd64`**. A multi-architecture image is optional future capability, not a prerequisite for `0.1.1`. Release evidence must therefore prove the immutable `linux/amd64` image identity actually handed to Flux rather than requiring an image-index spanning architectures the deployment does not use.
-
-Current registry locations remain:
+The first real public release baseline is **`1.0.0`**. The owner created and pushed the human Git tag `1.0.0`; it resolves exactly to producer source:
 
 ```text
-image: git.faruqi.dev/mimranfaruqi/agent-state-dashboard:<version>
-chart: oci://git.faruqi.dev/mimranfaruqi/helm-charts/agent-state-dashboard
+9051fc35810b11a9697e09e7b53d48c006c7f07b
 ```
 
-The producer release must publish no `latest` authority, retain no routine Actions artifact, perform verified remote read-back, and hand Flux the exact source SHA, versioned image reference/digest, chart reference/version/digest, and validation evidence. See [`docs/release.md`](docs/release.md) for the release evidence contract.
+The owner confirmed the automatic tag-triggered publication completed through the permanent public release path. The published producer identities are:
+
+```text
+image: ghcr.io/streamscapetv/agent-state-dashboard:1.0.0
+chart: oci://ghcr.io/streamscapetv/helm-charts/agent-state-dashboard:1.0.0
+```
+
+The packaged Helm `version` and `appVersion` for that release are both `1.0.0`, projected from the human Git tag by the release capability. Flux #288 may select chart version `1.0.0`; publication itself is not proof that Flux has deployed it.
+
+Historical `0.1.0` and `0.1.2` identities remain immutable pre-1.0 history. Never move, recreate, replay, or redefine them. `1.0.0` is also immutable now that it has been published.
+
+### Normal release flow
+
+`.github/workflows/release.yml` is the sole normal producer release entrypoint:
+
+1. merge a consumable dashboard revision to `main`;
+2. a human creates and pushes a fresh SemVer product tag (`1.0.1`, `1.1.0`, `2.0.0`, and so on as appropriate);
+3. the tag push starts the repository release workflow automatically;
+4. the thin caller invokes `StreamScapeTV/ci-workflows/.github/workflows/reusable-public-native-image-chart.yml@main`;
+5. Central validates the exact tag/source identity and publishes the native `linux/amd64` image and OCI Helm chart on standard GitHub-hosted Linux;
+6. Central removes publication credentials and anonymously reads back both remote OCI manifests before a successful run can complete;
+7. Flux separately selects the published chart version and owns deployment.
+
+The **human Git tag is the producer release-version authority**. A release does not require a preparatory commit that makes `package.json`, source `Chart.yaml` `version`, source `Chart.yaml` `appVersion`, and the Git tag identical. Central projects the immutable tag into the published image tag and packaged Helm chart version/appVersion. Checked-in package/chart versions may still be useful build/source metadata, but they are not an independent release selector and must not be moved merely to satisfy a release-alignment ceremony.
+
+The release caller grants only:
+
+```yaml
+permissions:
+  contents: read
+  packages: write
+```
+
+It passes bounded product names and paths only. It does **not** pass private registry credentials, a release backend selector, raw runner labels, cluster credentials, or deployment inputs. Runner/container/publication mechanics belong to the reviewed Central public API, not this product caller. The caller intentionally references Central at `@main`; an implementation SHA resolved during a run may be useful supplementary evidence, but it is not the product release identity or an operator-supplied release selector.
+
+The required current image target is **`linux/amd64`**. Multi-architecture publication is optional future capability, not a release gate. The producer publishes no `latest` authority and the normal release path retains zero routine GitHub Actions artifacts.
+
+Release evidence must distinguish what is actually known from what is not. For `1.0.0`, the owner-confirmed successful publication plus the reviewed fail-closed Central contract establishes that the GitHub-hosted runner and anonymous OCI read-back gates passed. The connected GitHub tooling used during release reconciliation could not enumerate the tag-push run without a known run ID, so no workflow run ID or remote digest is fabricated in repository evidence.
+
+See [`docs/release.md`](docs/release.md) for the producer evidence and Flux handoff contract.
