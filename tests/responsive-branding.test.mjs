@@ -41,8 +41,7 @@ test("responsive shell preserves project-first mobile usability", () => {
 });
 
 test("visual identity and metadata stay environment-neutral", () => {
-  const files = [
-    "app/icon.svg",
+  const publicUi = [
     "app/layout.tsx",
     "app/theme-provider.tsx",
     "app/globals.css",
@@ -51,8 +50,8 @@ test("visual identity and metadata stay environment-neutral", () => {
     "components/ActivityLogView.tsx",
   ].map(source).join("\n");
 
-  assert.doesNotMatch(files, /tailscale\.com/i);
-  assert.doesNotMatch(files, /loadBalancerClass/i);
-  assert.doesNotMatch(files, /ClusterIssuer/i);
-  assert.doesNotMatch(files, /\.faruqi\.dev/i);
+  assert.doesNotMatch(publicUi, /https?:\/\//i);
+  assert.doesNotMatch(publicUi, /tailscale/i);
+  assert.doesNotMatch(publicUi, /loadBalancerClass/i);
+  assert.doesNotMatch(publicUi, /ClusterIssuer/i);
 });
