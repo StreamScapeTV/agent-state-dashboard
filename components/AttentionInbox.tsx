@@ -20,7 +20,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useMemo, useState } from "react";
-import { buildAttentionQueue } from "@/lib/attention-inbox";
+import { buildAttentionQueue, filterAttentionRows } from "@/lib/attention-inbox";
 import { formatDuration, statusLabel } from "@/lib/dashboard-model";
 import type { AgentViewRow, IdentityKind } from "@/types/dashboard";
 
@@ -73,10 +73,7 @@ export function AttentionInbox({
   }, [rows]);
 
   const filteredRows = useMemo(
-    () => rows.filter((row) =>
-      (projectFilter === "all" || row.projectKey === projectFilter)
-      && (identityFilter === "all" || row.identityKind === identityFilter),
-    ),
+    () => filterAttentionRows(rows, projectFilter, identityFilter),
     [rows, projectFilter, identityFilter],
   );
 
