@@ -10,7 +10,6 @@ import {
   InputAdornment,
   InputLabel,
   MenuItem,
-  Paper,
   Select,
   Stack,
   Table,
@@ -104,7 +103,7 @@ export function WorkAssignmentBoard({ work, agents, onView }: WorkAssignmentBoar
   };
 
   return (
-    <Paper variant="outlined" sx={{ mb: 2 }}>
+    <Box sx={{ borderTop: "1px solid", borderColor: "divider" }}>
       <Stack
         direction={{ xs: "column", lg: "row" }}
         sx={{ gap: 1, p: 1.5, alignItems: { lg: "center" }, justifyContent: "space-between" }}
@@ -264,6 +263,6 @@ export function WorkAssignmentBoard({ work, agents, onView }: WorkAssignmentBoar
           </TableContainer>
         </Box>
       ))}
-    </Paper>
+    </Box>
   );
 }
