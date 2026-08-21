@@ -3,23 +3,52 @@ body {
   min-height: 100%;
 }
 
+html {
+  color-scheme: dark;
+  background: #071018;
+}
+
 body {
   margin: 0;
+  overflow-x: hidden;
   background:
-    radial-gradient(circle at 16% 0%, rgba(39, 213, 198, 0.10), transparent 30rem),
-    radial-gradient(circle at 92% 12%, rgba(124, 92, 255, 0.10), transparent 32rem),
+    radial-gradient(circle at 12% 0%, rgba(0, 212, 255, 0.12), transparent 28rem),
+    radial-gradient(circle at 92% 12%, rgba(34, 197, 94, 0.10), transparent 30rem),
+    radial-gradient(circle at 56% 100%, rgba(139, 124, 255, 0.07), transparent 34rem),
     #071018;
 }
 
 * {
   box-sizing: border-box;
+  scrollbar-color: rgba(148, 163, 184, 0.38) transparent;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
 }
 
 ::selection {
-  background: rgba(39, 213, 198, 0.28);
+  background: rgba(0, 212, 255, 0.28);
 }
 
 code,
 pre {
   font-family: var(--font-mono, "SFMono-Regular", Consolas, "Liberation Mono", monospace);
+}
+
+@media (max-width: 600px) {
+  body {
+    background:
+      radial-gradient(circle at 18% 0%, rgba(0, 212, 255, 0.10), transparent 18rem),
+      radial-gradient(circle at 92% 16%, rgba(34, 197, 94, 0.08), transparent 20rem),
+      #071018;
+  }
+
+  pre {
+    tab-size: 2;
+  }
 }

@@ -86,7 +86,7 @@ export function ActivityLogView({ activities, projectScope }: ActivityLogViewPro
   };
 
   return (
-    <Box sx={{ p: 1.5 }}>
+    <Box sx={{ p: { xs: 1.25, sm: 1.5 } }}>
       <Stack spacing={1.5}>
         <Stack
           direction={{ xs: "column", md: "row" }}
@@ -108,19 +108,19 @@ export function ActivityLogView({ activities, projectScope }: ActivityLogViewPro
           </Box>
         </Stack>
 
-        <Alert severity="info" variant="outlined">
+        <Alert severity="info" variant="outlined" sx={{ "& .MuiAlert-message": { minWidth: 0 } }}>
           Session-only live activity. Realtime changes, connection transitions and reconciliation observed after this page opened are shown here. Reloading clears this view; snapshots are not backfilled or presented as historical audit events.
         </Alert>
 
-        <Stack direction={{ xs: "column", xl: "row" }} sx={{ gap: 1 }}>
-          <FormControl size="small" sx={{ minWidth: 190 }}>
+        <Stack direction={{ xs: "column", lg: "row" }} sx={{ gap: 1, alignItems: { lg: "center" } }}>
+          <FormControl size="small" sx={{ minWidth: { lg: 190 }, width: { xs: "100%", lg: "auto" } }}>
             <InputLabel>Identity</InputLabel>
             <Select value={identity} label="Identity" onChange={(event) => setIdentity(String(event.target.value))}>
               <MenuItem value="all">All identities</MenuItem>
               {identities.map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 170 }}>
+          <FormControl size="small" sx={{ minWidth: { lg: 170 }, width: { xs: "100%", lg: "auto" } }}>
             <InputLabel>Event kind</InputLabel>
             <Select
               value={kind}
@@ -133,7 +133,7 @@ export function ActivityLogView({ activities, projectScope }: ActivityLogViewPro
               <MenuItem value="reconcile">Reconciliation</MenuItem>
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 180 }}>
+          <FormControl size="small" sx={{ minWidth: { lg: 180 }, width: { xs: "100%", lg: "auto" } }}>
             <InputLabel>Table</InputLabel>
             <Select
               value={table}
@@ -146,7 +146,7 @@ export function ActivityLogView({ activities, projectScope }: ActivityLogViewPro
               ))}
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 180 }}>
+          <FormControl size="small" sx={{ minWidth: { lg: 180 }, width: { xs: "100%", lg: "auto" } }}>
             <InputLabel>Change type</InputLabel>
             <Select
               value={eventType}
@@ -159,7 +159,11 @@ export function ActivityLogView({ activities, projectScope }: ActivityLogViewPro
               <MenuItem value="DELETE">Delete</MenuItem>
             </Select>
           </FormControl>
-          <IconButton aria-label="Clear activity filters" onClick={clearFilters}>
+          <IconButton
+            aria-label="Clear activity filters"
+            onClick={clearFilters}
+            sx={{ alignSelf: { xs: "flex-end", lg: "center" } }}
+          >
             <FilterAltOffRounded />
           </IconButton>
         </Stack>
@@ -169,7 +173,7 @@ export function ActivityLogView({ activities, projectScope }: ActivityLogViewPro
             No session activity matches these filters.
           </Typography>
         ) : (
-          <Box>
+          <Box sx={{ borderBottom: "1px solid", borderColor: "divider" }}>
             {visible.map((item) => {
               const identityLabel = item.identities?.join(" · ") ?? null;
               return (
@@ -179,38 +183,52 @@ export function ActivityLogView({ activities, projectScope }: ActivityLogViewPro
                   elevation={0}
                   sx={{ borderTop: "1px solid", borderColor: "divider", "&:before": { display: "none" } }}
                 >
-                  <AccordionSummary expandIcon={<ExpandMoreRounded />}>
+                  <AccordionSummary expandIcon={<ExpandMoreRounded />} sx={{ px: { xs: 1, sm: 2 } }}>
                     <Box
                       sx={{
                         width: "100%",
                         display: "grid",
-                        gridTemplateColumns: { xs: "1fr", md: "minmax(160px,.8fr) minmax(260px,2fr) minmax(150px,.8fr) minmax(180px,1fr)" },
-                        gap: { xs: 0.5, md: 1.25 },
+                        gridTemplateColumns: {
+                          xs: "minmax(0, 1fr)",
+                          sm: "minmax(150px,.7fr) minmax(0,1.3fr)",
+                          lg: "minmax(160px,.8fr) minmax(260px,2fr) minmax(150px,.8fr) minmax(180px,1fr)",
+                        },
+                        gap: { xs: 0.45, sm: 0.75, lg: 1.25 },
                         alignItems: "center",
-                        pr: 1,
+                        pr: { xs: 0.5, sm: 1 },
                       }}
                     >
-                      <Typography variant="caption" color="text.secondary">
+                      <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
                         {displayTime(item.observedAt)}
                       </Typography>
-                      <Typography>{item.summary}</Typography>
+                      <Typography
+                        sx={{
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        {item.summary}
+                      </Typography>
                       <Stack direction="row" sx={{ gap: 0.5, flexWrap: "wrap" }}>
                         <Chip size="small" label={kindLabel(item.kind)} variant="outlined" />
                         {item.eventType ? <Chip size="small" label={changeLabel(item.eventType)} variant="outlined" /> : null}
                       </Stack>
                       <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="caption" sx={{ display: "block" }} noWrap>
+                        <Typography variant="caption" sx={{ display: "block", whiteSpace: "normal", overflowWrap: "anywhere" }}>
                           {item.projectKey ? `Project: ${item.projectKey}` : "Global session event"}
                         </Typography>
                         {identityLabel ? (
-                          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }} noWrap>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: "block", whiteSpace: "normal", overflowWrap: "anywhere" }}>
                             {identityLabel}
                           </Typography>
                         ) : null}
                       </Box>
                     </Box>
                   </AccordionSummary>
-                  <AccordionDetails sx={{ pt: 0 }}>
+                  <AccordionDetails sx={{ pt: 0, px: { xs: 1, sm: 2 }, pb: 1.5 }}>
                     <Stack direction="row" sx={{ gap: 0.75, flexWrap: "wrap" }}>
                       <Chip size="small" label={`Kind · ${kindLabel(item.kind)}`} />
                       <Chip size="small" label={item.projectKey ? `Project · ${item.projectKey}` : "Project · Global"} />
