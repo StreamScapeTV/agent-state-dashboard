@@ -4,6 +4,19 @@ set -eu
 : "${SUPABASE_URL:?SUPABASE_URL must be supplied by the Kubernetes Secret}"
 : "${SUPABASE_SECRET_KEY:?SUPABASE_SECRET_KEY must be supplied by the Kubernetes Secret}"
 
+# TLS is mandatory. Flux/cert-manager owns the Secret and mounts these stable
+# paths through the producer chart; there is intentionally no plaintext mode.
+tls_cert="/tls/tls.crt"
+tls_key="/tls/tls.key"
+if [ ! -r "${tls_cert}" ] || [ ! -s "${tls_cert}" ]; then
+  echo "TLS certificate must be mounted at ${tls_cert}" >&2
+  exit 64
+fi
+if [ ! -r "${tls_key}" ] || [ ! -s "${tls_key}" ]; then
+  echo "TLS private key must be mounted at ${tls_key}" >&2
+  exit 64
+fi
+
 # The values are substituted into an NGINX configuration, so validate their
 # complete grammar rather than attempting to escape arbitrary configuration
 # syntax. Hosted Supabase URLs are origins; local/self-hosted development may
@@ -46,5 +59,12 @@ mkdir -p \
 
 envsubst '${SUPABASE_URL} ${SUPABASE_SECRET_KEY}' < "${nginx_template}" > "${nginx_config}"
 unset SUPABASE_URL SUPABASE_SECRET_KEY
+
+# Validate the rendered configuration against the actual mounted certificate
+# and private key. This also rejects malformed or mismatched TLS material.
+if ! nginx -t -c "${nginx_config}"; then
+  echo "NGINX configuration or mounted TLS material is invalid" >&2
+  exit 70
+fi
 
 exec nginx -c "${nginx_config}" -g 'daemon off;'

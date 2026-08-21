@@ -19,9 +19,9 @@ spec:
   type: ClusterIP
   {{- end }}
   ports:
-    - name: http
+    - name: https
       port: {{ .Values.service.port }}
-      targetPort: http
+      targetPort: https
       protocol: TCP
   selector:
     {{- include "agent-state-dashboard.selectorLabels" . | nindent 4 }}

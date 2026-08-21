@@ -31,12 +31,14 @@ RUN set -eux; \
       envsubst '${SUPABASE_URL} ${SUPABASE_SECRET_KEY}' \
       < /etc/nginx/templates/nginx.conf.template \
       > /tmp/nginx-build-check.conf; \
-    nginx -t -c /tmp/nginx-build-check.conf; \
+    grep -Fq 'listen 8443 ssl;' /tmp/nginx-build-check.conf; \
+    grep -Fq 'ssl_certificate /tls/tls.crt;' /tmp/nginx-build-check.conf; \
+    grep -Fq 'ssl_certificate_key /tls/tls.key;' /tmp/nginx-build-check.conf; \
     rm -f /tmp/nginx-build-check.conf
 
 USER 101
-EXPOSE 8080
+EXPOSE 8443
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD wget -q -T 2 -O /dev/null http://127.0.0.1:8080/healthz || exit 1
+  CMD wget -q --no-check-certificate -T 2 -O /dev/null https://127.0.0.1:8443/healthz || exit 1
 STOPSIGNAL SIGQUIT
 ENTRYPOINT ["/usr/local/bin/agent-state-dashboard-entrypoint"]
