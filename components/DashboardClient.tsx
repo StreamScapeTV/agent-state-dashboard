@@ -38,6 +38,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
+import { ActivityLogView } from "@/components/ActivityLogView";
 import { AttentionInbox } from "@/components/AttentionInbox";
 import { CoordinationBoard } from "@/components/CoordinationBoard";
 import { ProjectOverview } from "@/components/ProjectOverview";
@@ -63,7 +64,7 @@ import type {
 } from "@/types/dashboard";
 import { RAW_TABLE_NAMES } from "@/types/dashboard";
 
-type AdvancedView = "attention" | "work" | "coordination" | "resources" | "raw";
+type AdvancedView = "logs" | "attention" | "work" | "coordination" | "resources" | "raw";
 type AdvancedScope = "project" | "all";
 
 function displayTime(value: string | null): string {
@@ -372,7 +373,7 @@ export function DashboardClient() {
   const [selectedProjectKey, setSelectedProjectKey] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState<AgentStatusFilter>("all");
   const [selectedAgentKey, setSelectedAgentKey] = useState<string | null>(null);
-  const [advancedView, setAdvancedView] = useState<AdvancedView>("attention");
+  const [advancedView, setAdvancedView] = useState<AdvancedView>("logs");
   const [advancedScope, setAdvancedScope] = useState<AdvancedScope>("project");
   const [rawOpen, setRawOpen] = useState(false);
   const [healthOpen, setHealthOpen] = useState(false);
@@ -421,7 +422,7 @@ export function DashboardClient() {
     setSelectedProjectKey(projectKey);
     setSelectedStatus("all");
     setAdvancedScope("project");
-    setAdvancedView("attention");
+    setAdvancedView("logs");
   };
 
   const selectedProjectRows = useMemo(
@@ -498,23 +499,9 @@ export function DashboardClient() {
                 );
               })}
             </Stack>
-            {activities.length > 0 ? (
-              <Box>
-                <Typography variant="overline">Recent live activity</Typography>
-                <Stack direction="row" sx={{ gap: 0.75, overflowX: "auto", pb: 0.25 }}>
-                  {activities.slice(0, 8).map((activity) => (
-                    <Chip
-                      key={activity.id}
-                      size="small"
-                      variant="outlined"
-                      label={`${shortTime(activity.observedAt)} · ${activity.summary}`}
-                    />
-                  ))}
-                </Stack>
-              </Box>
-            ) : (
-              <Typography variant="caption" color="text.secondary">No live changes observed since this page opened.</Typography>
-            )}
+            <Typography variant="caption" color="text.secondary">
+              Session event details are available under Logs / Activity after selecting a project.
+            </Typography>
           </Stack>
         </Paper>
       </Collapse>
@@ -567,6 +554,7 @@ export function DashboardClient() {
                 scrollButtons="auto"
                 sx={{ px: 0.5, borderBottom: "1px solid", borderColor: "divider" }}
               >
+                <Tab value="logs" label="Logs / Activity" />
                 <Tab value="attention" label="Attention" />
                 <Tab value="work" label="Work / assignments" />
                 <Tab value="coordination" label="Coordination" />
@@ -575,6 +563,9 @@ export function DashboardClient() {
               </Tabs>
 
               <Box sx={{ p: advancedView === "raw" ? 1.5 : 0 }}>
+                {advancedView === "logs" ? (
+                  <ActivityLogView activities={activities} projectScope={rawProjectScope} />
+                ) : null}
                 {advancedView === "attention" ? (
                   <AttentionInbox
                     rows={advancedRows}
