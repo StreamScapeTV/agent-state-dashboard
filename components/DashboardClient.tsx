@@ -500,7 +500,7 @@ export function DashboardClient() {
               })}
             </Stack>
             <Typography variant="caption" color="text.secondary">
-              Session event details are available under Logs / Activity after selecting a project.
+              Recent live activity is available under Logs / Activity after selecting a project.
             </Typography>
           </Stack>
         </Paper>
