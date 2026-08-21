@@ -31,7 +31,7 @@ test("selected project owns one interactive status drill-down", () => {
   for (const label of ["Agents", "Working", "Blocked", "Returned", "Idle"]) {
     assert.match(overviewSource, new RegExp(`label: "${label}"`));
   }
-  assert.match(overviewSource, /aria-label=\{`Show \$\{card\.label\.toLowerCase\(\)\} agents`} /);
+  assert.match(overviewSource, /aria-label=\{`Show \$\{card\.label\.toLowerCase\(\)\} agents`}\s*/);
   assert.match(overviewSource, /onClick=\{\(\) => onSelectStatus\(card\.value\)\}/);
   assert.match(overviewSource, /filterProjectRows\(rows, selectedProjectKey, selectedStatus\)/);
   assert.match(overviewSource, /<Accordion/);
