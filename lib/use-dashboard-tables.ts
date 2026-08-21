@@ -168,7 +168,9 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
       pendingInvalidationsRef.current.clear();
       fullControllerRef.current?.abort();
       fullControllerRef.current = null;
-      for (const controller of Object.values(tableControllersRef.current)) controller?.abort();
+      for (const controller of Object.values(tableControllersRef.current)) {
+        if (controller) controller.abort();
+      }
       tableControllersRef.current = {};
     };
   }, [queueTableRefresh, requestFullRefresh]);
