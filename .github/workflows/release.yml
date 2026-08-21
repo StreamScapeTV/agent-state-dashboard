@@ -9,22 +9,20 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
-# Release runs are keyed to the immutable release tag. Do not cancel an in-flight
-# publication for the same version; the central publisher remains idempotent.
+# Release runs are keyed to the immutable product tag. Do not cancel an in-flight
+# publication for the same version; Central publishes that exact tag once.
 concurrency:
   group: agent-state-dashboard-release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   release:
-    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-native-image-chart.yml@7ff890874bf8091203dddd9bfb11cb498eefe6d4
+    uses: StreamScapeTV/ci-workflows/.github/workflows/reusable-public-native-image-chart.yml@main
     with:
       image_name: agent-state-dashboard
       chart_name: agent-state-dashboard
       chart_path: charts/agent-state-dashboard
       dockerfile_path: Dockerfile
       build_context: .
-    secrets:
-      registry_username: ${{ secrets.FORGEJO_REGISTRY_USERNAME }}
-      registry_token: ${{ secrets.FORGEJO_REGISTRY_TOKEN }}
