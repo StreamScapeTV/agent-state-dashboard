@@ -132,12 +132,14 @@ Do not add a product-local GitHub Actions job with concrete runner labels as a C
 The repository-owned `.github/workflows/release.yml` is the sole normal producer release entrypoint. Normal release UX is intentionally human-operated and tag-driven:
 
 1. merge a consumable dashboard revision to `main`;
-2. a human creates and pushes a fresh SemVer product tag such as `0.1.3`;
+2. a human creates and pushes a fresh SemVer product tag, with the public release line beginning at `1.0.0`;
 3. that tag push automatically starts `.github/workflows/release.yml`;
 4. the thin caller invokes `StreamScapeTV/ci-workflows/.github/workflows/reusable-public-native-image-chart.yml@main`;
 5. Central runs the native `linux/amd64` build and Helm publication on standard GitHub-hosted Linux;
 6. the product tag is the release-version authority for both the public image and packaged Helm chart;
 7. Flux separately selects the published chart version and owns deployment.
+
+The first real public release baseline is `1.0.0`. Future normal SemVer progression starts from that baseline (`1.0.1`, `1.1.0`, `2.0.0`, and so on) according to the product change being released. Historical `0.1.0` / `0.1.2` identities remain immutable pre-1.0 history and are not the normal public release line.
 
 The public release caller grants only `contents: read` and `packages: write`. It passes bounded product names/paths only. It must not pass private registry credentials, PATs, maintenance tokens, raw runner labels, an `execution_backend` selector, cluster credentials, deployment inputs, or product-specific Central implementation policy.
 
@@ -153,7 +155,7 @@ Publication and deployment are separate authorities:
 - this repository owns the human product tag, producer image/chart publication, public remote read-back, and release evidence;
 - Flux #288 owns encrypted runtime Secret material, any required pull configuration, Tailscale/Cloudflare exposure, cluster desired state, reconciliation, rollout, live health proof, and rollback.
 
-Historical tags are immutable. Never move, delete, recreate, republish, or redefine `0.1.0` or `0.1.2`. The historical `0.1.2` recovery attempt is not part of the normal release path and must not be used as a template for future releases.
+Historical tags are immutable. Never move, delete, recreate, republish, or redefine `0.1.0`, `0.1.2`, or the first public-release tag `1.0.0`. The historical `0.1.2` recovery attempt is not part of the normal release path and must not be used as a template for future releases.
 
 The required current image target is `linux/amd64`. Multi-architecture publication is optional future capability, not a release gate. Public release evidence must identify the exact tagged source plus anonymously read-back image/chart identities produced by Central.
 
