@@ -5,8 +5,9 @@
 - Repository: `StreamScapeTV/agent-state-dashboard`
 - Agent State project key: `agent-state-dashboard`
 - Integration branch: `main`
+- Source repository: public GitHub repository
 - Deployment target: private K3s through the repository OCI Helm chart; Flux #288 owns cluster activation
-- Application: private read-only Agent State dashboard
+- Application: private read-only Agent State dashboard at runtime
 - Sole shared organization-policy entry point: `StreamScapeTV/organization-rules@main/AGENTS.md`
 
 Before any work, read this file and then the current shared organization entry point. This file defines only dashboard product authority and stricter data, security, deployment, and validation requirements; the shared entry point owns the generic collaboration and development lifecycle.
@@ -120,32 +121,40 @@ helm lint charts/agent-state-dashboard
 helm template agent-state-dashboard charts/agent-state-dashboard
 ```
 
-The package tests are authoritative for the current pure-NGINX boundary: build-time-only Node, pinned NGINX runtime, exact `/supabase` REST/Realtime proxy, Secret references, Tailscale metadata, probes/resources/security posture, release-version alignment, and the repository release caller.
+The package tests are authoritative for the current pure-NGINX boundary: build-time-only Node, pinned NGINX runtime, exact `/supabase` REST/Realtime proxy, Secret references, Tailscale metadata, probes/resources/security posture, source package/chart consistency, and the repository release caller.
 
 Documentation-only changes do not manufacture product-build, image, Helm, deployment, or live-cluster evidence. Runtime, integration, container, publication, deployment, and release evidence remain distinct product proofs tied to the exact source revision under test.
 
-Do not add a product-local GitHub Actions job with concrete runner labels as a CI workaround. Use the reviewed central semantic callers and `StreamScapeTV/ci-workflows@main/RUNNERS.md` only when the bounded task requires runner capability selection.
+Do not add a product-local GitHub Actions job with concrete runner labels as a CI workaround. Use reviewed Central reusable callers. Public portable dashboard validation uses Central's explicit `github-hosted` backend; the public release API owns its fixed GitHub-hosted runner internally.
 
 ## Release authority
 
-The repository-owned `.github/workflows/release.yml` is the final producer release entrypoint. It must remain product-specific only at the bounded input layer and call reviewed generic central CI/release capabilities for reusable implementation. Product repository code must not hard-code reusable runner labels, container-engine policy, cluster credentials, or deployment behavior into the release caller.
+The repository-owned `.github/workflows/release.yml` is the sole normal producer release entrypoint. Normal release UX is intentionally human-operated and tag-driven:
+
+1. merge a consumable dashboard revision to `main`;
+2. a human creates and pushes a fresh SemVer product tag such as `0.1.3`;
+3. that tag push automatically starts `.github/workflows/release.yml`;
+4. the thin caller invokes `StreamScapeTV/ci-workflows/.github/workflows/reusable-public-native-image-chart.yml@main`;
+5. Central runs the native `linux/amd64` build and Helm publication on standard GitHub-hosted Linux;
+6. the product tag is the release-version authority for both the public image and packaged Helm chart;
+7. Flux separately selects the published chart version and owns deployment.
+
+The public release caller grants only `contents: read` and `packages: write`. It passes bounded product names/paths only. It must not pass private registry credentials, PATs, maintenance tokens, raw runner labels, an `execution_backend` selector, cluster credentials, deployment inputs, or product-specific Central implementation policy.
+
+Publication targets are fixed by the reviewed public Central API:
+
+- image: `ghcr.io/streamscapetv/agent-state-dashboard:<tag>`;
+- Helm OCI chart: `oci://ghcr.io/streamscapetv/helm-charts/agent-state-dashboard:<tag>`.
+
+The Git tag is the release-version authority. Do **not** require a release-only source commit merely to make `package.json.version`, source `Chart.yaml version`, or source `Chart.yaml appVersion` equal the tag. Central stamps packaged Helm `version` and `appVersion` from the release tag and publishes the image with the same tag. Source package/chart metadata may remain useful development metadata and should stay internally consistent where repository tests require it, but it does not authorize or reject a human release tag.
 
 Publication and deployment are separate authorities:
 
-- this repository owns the source/tag identity, producer image/chart publication, immutable remote read-back, and release evidence;
-- Flux #288 owns encrypted runtime Secret material, registry pull credentials, Tailscale/Cloudflare exposure, cluster desired state, reconciliation, rollout, live health proof, and rollback.
+- this repository owns the human product tag, producer image/chart publication, public remote read-back, and release evidence;
+- Flux #288 owns encrypted runtime Secret material, any required pull configuration, Tailscale/Cloudflare exposure, cluster desired state, reconciliation, rollout, live health proof, and rollback.
 
-`0.1.0` is immutable historical release identity. Never republish, retag, or redefine it to represent the pure-NGINX architecture.
+Historical tags are immutable. Never move, delete, recreate, republish, or redefine `0.1.0` or `0.1.2`. The historical `0.1.2` recovery attempt is not part of the normal release path and must not be used as a template for future releases.
 
-The next pure-NGINX release authority is `0.1.1`. Before tagging `0.1.1`, the separately owned release/version change must make these values exactly equal:
+The required current image target is `linux/amd64`. Multi-architecture publication is optional future capability, not a release gate. Public release evidence must identify the exact tagged source plus anonymously read-back image/chart identities produced by Central.
 
-- Git tag `0.1.1`;
-- `package.json` version `0.1.1`;
-- `charts/agent-state-dashboard/Chart.yaml` `version: 0.1.1`;
-- `charts/agent-state-dashboard/Chart.yaml` `appVersion: "0.1.1"`.
-
-Until that version-finalization change lands, `package.json` and the chart may correctly remain at historical `0.1.0`; documentation alone must not bump them.
-
-The required image publication target for the current Debian/K3s environment is `linux/amd64`. Multi-architecture publication is optional future capability, not a release gate for `0.1.1`. Release evidence must identify and verify the immutable `linux/amd64` image handed to Flux.
-
-Publication is immutable: no `latest` authority, no rewriting historical release identities, and zero routine Actions artifacts. Record the exact tagged source SHA plus verified remote image and chart identities. The producer workflow must not activate its own release in Kubernetes.
+Publication remains immutable: no `latest` product release authority, no rewriting historical release identities, no manual existing-tag replay/tag-cut/request-ID ceremony, no consumer-maintained Central commit SHA, and zero routine Actions artifacts. The producer workflow must never activate its own release in Kubernetes.
