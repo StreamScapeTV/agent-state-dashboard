@@ -21,7 +21,8 @@ const TABLE_ORDER_COLUMNS: Record<RawTableName, readonly string[]> = {
 };
 
 export interface DashboardRawSnapshot {
-  tables: Record<RawTableName, unknown[]>;
+  tables: Partial<Record<RawTableName, unknown[]>>;
+  errors: Partial<Record<RawTableName, string>>;
   refreshedAt: string;
 }
 
@@ -116,19 +117,38 @@ export async function readDashboardTable(
   }
 }
 
+function errorMessage(caught: unknown, table: RawTableName): string {
+  return caught instanceof Error && caught.message.trim().length > 0
+    ? caught.message
+    : `Dashboard read failed for ${table}`;
+}
+
 export async function readDashboardSnapshot(
   client: DashboardSupabaseClient,
   options: Pick<ReadTableOptions, "signal"> = {},
 ): Promise<DashboardRawSnapshot> {
-  const entries = await Promise.all(
-    DASHBOARD_TABLES.map(async (table) => [
-      table,
-      await readDashboardTable(client, table, options),
-    ] as const),
+  const results = await Promise.allSettled(
+    DASHBOARD_TABLES.map((table) => readDashboardTable(client, table, options)),
   );
 
+  if (options.signal?.aborted) {
+    const aborted = new Error("Dashboard snapshot read aborted");
+    aborted.name = "AbortError";
+    throw aborted;
+  }
+
+  const tables: Partial<Record<RawTableName, unknown[]>> = {};
+  const errors: Partial<Record<RawTableName, string>> = {};
+  for (let index = 0; index < DASHBOARD_TABLES.length; index += 1) {
+    const table = DASHBOARD_TABLES[index];
+    const result = results[index];
+    if (result.status === "fulfilled") tables[table] = result.value;
+    else errors[table] = errorMessage(result.reason, table);
+  }
+
   return {
-    tables: Object.fromEntries(entries) as Record<RawTableName, unknown[]>,
+    tables,
+    errors,
     refreshedAt: new Date().toISOString(),
   };
 }
