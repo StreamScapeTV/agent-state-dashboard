@@ -72,11 +72,20 @@ export type AgentBaseStatus = "working" | "returned" | "idle";
 export type AgentStatusFilter = "all" | AgentBaseStatus | "blocked";
 export type IdentityKind = "orchestrator" | "agent" | "codex" | "dependabot" | "other";
 
+export interface BlockerCue {
+  reason: string;
+  source: "actor" | "work";
+  workKey: string | null;
+  summary: string | null;
+  nextAction: string | null;
+}
+
 export interface AgentViewRow extends CurrentAgentRecord {
   key: string;
   assignedAt: string | null;
   baseStatus: AgentBaseStatus;
   blocked: boolean;
+  blockerCues: BlockerCue[];
   durationMs: number | null;
   work: CurrentWorkRecord[];
   resources: CurrentResourceRecord[];
