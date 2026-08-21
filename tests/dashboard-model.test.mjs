@@ -287,7 +287,7 @@ test("project summaries preserve returned attention counts and current project f
   assert.equal(summary.nextAction, "Merge");
 });
 
-test("client source contract preserves owner interaction wiring while table orchestration is delegated", () => {
+test("client source contract preserves owner interaction wiring while live orchestration is delegated", () => {
   const source = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
   const hookSource = readFileSync(new URL("../lib/use-dashboard-tables.ts", import.meta.url), "utf8");
 
@@ -295,11 +295,15 @@ test("client source contract preserves owner interaction wiring while table orch
   assert.match(source, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
   assert.match(source, /tableHealthLabel\(tableStates\[table\], nowMs, STALE_AFTER_MS\)/);
   assert.match(source, /Partial Agent State data/);
-  assert.match(source, /Realtime · \$\{effectiveLiveState\}/);
+  assert.match(source, /Realtime · \$\{connectionLabel\}/);
   assert.match(source, /Data · \$\{freshness\}/);
+  assert.match(source, /Live activity/);
+  assert.doesNotMatch(source, /Refresh all/);
   assert.match(hookSource, /subscribeToDashboardChanges\(client, \{/);
   assert.match(hookSource, /readDashboardSnapshot\(client, \{ signal: controller\.signal \}\)/);
-  assert.match(hookSource, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
+  assert.match(hookSource, /onChange: applyLiveChange/);
+  assert.match(hookSource, /applyRealtimeChangeToTableStates\(current, change\)/);
+  assert.doesNotMatch(hookSource, /readDashboardTable\(/);
   assert.match(source, /const baseRows = useMemo\(\(\) => \(snapshot \? buildAgentRows\(snapshot, 0\) : \[\]\), \[snapshot\]\)/);
   assert.match(source, /refreshAgentDurations\(baseRows, nowMs\)/);
   assert.match(source, /const \[selectedAgentKey, setSelectedAgentKey\] = useState<string \| null>\(null\)/);
