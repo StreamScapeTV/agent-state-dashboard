@@ -38,6 +38,7 @@ function row(identity, overrides = {}) {
     assignedAt: "2026-08-21T04:00:00Z",
     baseStatus: "working",
     blocked: false,
+    blockerCues: [],
     durationMs: 60_000,
     work: [],
     resources: [],
@@ -203,7 +204,7 @@ test("project and identity filters produce the bounded queue input", () => {
   assert.deepEqual(inbox.filterAttentionRows(rows, "missing", "all"), []);
 });
 
-test("UI keeps source staleness separate from agent age and links to existing detail inspection", () => {
+test("UI keeps source staleness outside the focused attention view and links to existing detail inspection", () => {
   const source = readFileSync(new URL("../components/AttentionInbox.tsx", import.meta.url), "utf8");
   const dashboardSource = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
 
@@ -212,10 +213,15 @@ test("UI keeps source staleness separate from agent age and links to existing de
   assert.match(source, /buildAttentionQueue\(filteredRows, recipient\)/);
   assert.match(source, /onClick=\{\(\) => onView\(row\.key\)\}/);
   assert.match(source, /\{row\.work\.length\} work · \{row\.resources\.length\} resources/);
+  assert.match(source, /row\.blockerCues\[0\]\?\.reason \?\? "Blocked reason not recorded"/);
   assert.doesNotMatch(source, /DashboardLiveState|effectiveLiveState|"stale"|"failed"|timeout/i);
+  assert.doesNotMatch(source, /WorkAssignmentBoard|CoordinationBoard|ResourcesCapacityBoard/);
 
-  assert.match(dashboardSource, /const effectiveLiveState: DashboardLiveState =/);
   assert.match(dashboardSource, /<AttentionInbox/);
-  assert.match(dashboardSource, /projectFilter=\{projectFilter\}/);
-  assert.match(dashboardSource, /identityFilter=\{identityFilter\}/);
+  assert.match(dashboardSource, /rows=\{advancedRows\}/);
+  assert.match(dashboardSource, /projectFilter="all"/);
+  assert.match(dashboardSource, /identityFilter="all"/);
+  assert.match(dashboardSource, /selectedProjectKey !== "all"/);
+  assert.match(dashboardSource, /advancedScope === "project"/);
+  assert.match(dashboardSource, /connectionState === "live" && freshness === "fresh"/);
 });
