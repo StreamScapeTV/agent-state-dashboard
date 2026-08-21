@@ -266,7 +266,9 @@ function collectBlockerReasons(value: JsonValue, output: string[], depth = 0): v
     }
     if ((normalizedKey === "status" || normalizedKey === "phase") && typeof item === "string") {
       const normalizedValue = item.trim().toLowerCase();
-      if (/^blocked(?:$|[:_\-\s])/.test(normalizedValue) || /^waiting(?:$|[:_\-\s])/.test(normalizedValue)) {
+      const blockedStatus = /^blocked(?:$|[:_\-\s])/.test(normalizedValue);
+      const waitingStatus = /^waiting(?:$|[:_\-\s])/.test(normalizedValue);
+      if ((blockedStatus || waitingStatus) && normalizedValue !== "blocked" && normalizedValue !== "waiting") {
         output.push(item.trim());
       }
     }
