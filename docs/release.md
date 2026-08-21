@@ -1,10 +1,12 @@
 # Agent State Dashboard release evidence
 
-This repository publishes producer artifacts only. Flux #288 owns the live cluster desired state, encrypted Supabase Secret material, image-pull credentials, Tailscale and any owner-approved Cloudflare exposure, reconciliation, rollout health proof, and rollback.
+This repository publishes producer artifacts only. Flux #288 owns the live cluster desired state, encrypted Supabase/TLS Secret material, cert-manager certificate issuance, image-pull credentials, Tailscale and any owner-approved Cloudflare/ExternalDNS exposure, reconciliation, rollout health proof, and rollback.
 
 ## Release line and identity
 
-The first real public dashboard release is **`1.0.0`**. The owner-created human Git tag `1.0.0` resolves exactly to:
+### Published baseline: 1.0.0
+
+The first real public dashboard release is immutable **`1.0.0`**. The owner-created human Git tag `1.0.0` resolves exactly to:
 
 ```text
 9051fc35810b11a9697e09e7b53d48c006c7f07b
@@ -21,9 +23,17 @@ packaged chart appVersion: 1.0.0
 
 Flux #288 may consume chart version `1.0.0`; this producer publication does not by itself prove live cluster deployment.
 
-Historical `0.1.0` and `0.1.2` tags are immutable pre-1.0 identities. Never republish, move, recreate, replay, or redefine them. Published `1.0.0` is likewise immutable.
+`1.0.0` predates the mandatory-TLS source change merged in #89. Its successful publication must not be reused as evidence that the current post-#89 image/chart have already been published, deployed, or validated as the HTTPS-only runtime.
 
-For future releases, a human selects the next appropriate fresh SemVer tag from a consumable `main` revision. The **human Git tag is the canonical producer release version**. There is no release prerequisite requiring a preparatory source commit that makes all of these values identical:
+Historical `0.1.0`, `0.1.2`, and published `1.0.0` tags are immutable. Never republish, move, recreate, replay, or redefine them.
+
+### Current post-1.0.0 source and next target
+
+Merged #89 changed the current producer contract to mandatory NGINX TLS and explicitly selected **`1.0.1`** as the next producer release target. Current `main` may continue to advance before tagging, so the exact `1.0.1` release source is not fixed until the owner creates the tag.
+
+Do not claim `1.0.1` publication or deployment before the owner actually creates/pushes that fresh tag and the normal producer/deployment evidence exists.
+
+For future releases, the **human Git tag is the canonical producer release version**. There is no release prerequisite requiring a preparatory source commit that makes all of these values identical:
 
 - `package.json` `version`;
 - source `charts/agent-state-dashboard/Chart.yaml` `version`;
@@ -37,7 +47,7 @@ Central projects the immutable product tag into the published image tag and pack
 `.github/workflows/release.yml` is the sole normal producer release entrypoint:
 
 1. merge a consumable dashboard revision to `main`;
-2. a human creates and pushes a fresh SemVer tag;
+2. a human creates and pushes a fresh SemVer tag (the next owner-directed target is `1.0.1`);
 3. the tag push automatically starts `.github/workflows/release.yml`;
 4. the caller invokes `StreamScapeTV/ci-workflows/.github/workflows/reusable-public-native-image-chart.yml@main`;
 5. Central revalidates the exact immutable tag/source relationship before privileged publication;
@@ -59,20 +69,40 @@ The caller intentionally uses Central `@main`. A resolved Central implementation
 
 The release workflow publishes no `latest` authority, performs no Kubernetes deployment, and the normal successful path retains zero routine GitHub Actions artifacts.
 
-## Pure-NGINX runtime evidence
+## Mandatory-TLS NGINX runtime evidence
 
-The release candidate must prove the architecture that is actually shipped:
+The current post-#89 release candidate must prove the architecture that is actually shipped:
 
 - Node `22.18.0` is a build/development/validation tool only; in the container image it appears only in the build stage and is never a deployed runtime dependency;
-- the deployed image runtime is digest-pinned NGINX `1.29.8` listening on port `8080`;
-- `/healthz` is served directly by NGINX;
-- there is no local Node server, `/api/*`, `/events`, loopback port `8788`, runtime npm execution, or process supervisor;
-- the browser reads only the five current Agent State tables through same-origin `/supabase/rest/v1/*`;
+- the deployed application runtime is digest-pinned NGINX `1.29.8` only;
+- NGINX terminates mandatory TLS directly on non-root port `8443`;
+- there is no plaintext application listener, TLS-disabled mode, TLS sidecar, local Node server, `/api/*`, `/events`, loopback port `8788`, runtime npm execution, or process supervisor;
+- runtime TLS files are required at `/tls/tls.crt` and `/tls/tls.key` from a read-only mounted existing Kubernetes Secret;
+- startup fails closed if certificate/key files are missing, empty, unreadable, malformed, or mismatched, and NGINX configuration is validated against the mounted TLS material before startup;
+- Docker healthcheck and Kubernetes readiness/liveness probes use HTTPS;
+- the Service exposes HTTPS port `443` targeting container port `8443` named `https`;
+- `GET https://<host>:8443/healthz` is served directly by NGINX;
+- the browser reads only the five current Agent State tables through same-origin HTTPS `/supabase/rest/v1/*`;
 - REST accepts only `GET`, `HEAD`, and `OPTIONS`; mutation methods are denied and unlisted table paths are not proxied;
-- Realtime is exposed only through `/supabase/realtime/v1/websocket`;
-- NGINX injects `SUPABASE_SECRET_KEY` upstream and the real Supabase URL/key never enters generated static assets or browser-visible responses.
+- Realtime is exposed only through `/supabase/realtime/v1/websocket` on the same HTTPS server;
+- NGINX injects `SUPABASE_SECRET_KEY` upstream and the real Supabase URL/key never enters generated static assets or browser-visible responses;
+- TLS certificate/private-key material never enters generated assets, chart values, logs, repository evidence, or browser responses.
 
-Record exact-source pre-publication evidence for the source revision the tag will name. A release packet may use the following bounded fields when the corresponding checks actually ran:
+The producer chart's default Secret surfaces are:
+
+```text
+Supabase Secret: agent-state-dashboard-supabase
+  SUPABASE_URL
+  SUPABASE_SECRET_KEY
+
+TLS Secret: agent-state-dashboard-tls
+  tls.crt -> /tls/tls.crt
+  tls.key -> /tls/tls.key
+```
+
+Flux/cert-manager owns the real certificate issuance, domain, and actual TLS Secret used by deployment. Producer evidence validates the chart/runtime contract; it does not contain the certificate or private key.
+
+Record exact-source pre-publication evidence for the source revision the human tag will name. A release packet may use the following bounded fields when the corresponding checks actually ran:
 
 ```text
 source_sha: <40-character commit SHA>
@@ -84,14 +114,17 @@ npm_build: success
 helm_lint: success
 helm_template: success
 container_nginx_runtime_only: success
-container_healthz: success
+container_tls_required: success
+container_tls_mount_contract: success
+container_https_only_listener: success
+container_https_healthz: success
 container_rest_readonly_gateway: success
 container_realtime_gateway: success
 browser_secret_scan: success
 image_target_platform: linux/amd64
 ```
 
-Do not record a success value that was not produced for the exact source SHA. Documentation, source validation, image publication, Helm publication, cluster rollout, and live access are separate proofs.
+Do not record a success value that was not produced for the exact source SHA. Documentation, source validation, image publication, Helm publication, cluster rollout, certificate issuance, and live access are separate proofs.
 
 ## Image platform authority
 
@@ -116,7 +149,7 @@ chart: oci://ghcr.io/streamscapetv/helm-charts/agent-state-dashboard:<tag>
 
 Central's successful public release path is fail-closed around remote read-back: after publication credentials are removed, the image and chart manifests are fetched anonymously and verified before success. The image read-back verifies the expected Linux/amd64 identity; the chart read-back records the OCI manifest identity.
 
-When the successful run exposes the values, retain a bounded handoff packet such as:
+When a successful fresh release run exposes the values, retain a bounded handoff packet such as:
 
 ```text
 release_tag: <canonical human Git tag>
@@ -139,9 +172,11 @@ deployment_performed: false
 
 A local image ID, build cache identifier, chart package checksum, or workflow success alone is not a substitute for verified remote OCI identity. A chart package checksum is supplementary; the remote OCI chart manifest digest is the stronger published-chart identity.
 
-Never invent a missing run ID or digest. For the `1.0.0` reconciliation, the connected GitHub tool could not enumerate the tag-push run without a known run ID. Therefore repository issue evidence records the exact tag/source and owner-confirmed completed publication, together with the reviewed Central contract that requires GitHub-hosted execution and anonymous image/chart read-back for success, but it does not fabricate unavailable digest/run fields.
+Never invent a missing run ID or digest. For the `1.0.0` reconciliation, the connected GitHub tool could not enumerate the tag-push run without a known run ID. Repository evidence therefore records the exact `1.0.0` tag/source and owner-confirmed completed publication together with the reviewed Central contract, but it does not fabricate unavailable digest/run fields.
 
-Never place registry credentials, Supabase values, rendered secret-bearing NGINX configuration, auth files, environment dumps, cluster credentials, or unrestricted logs into release evidence.
+Likewise, do not copy `1.0.0` run/read-back evidence forward to the post-#89 `1.0.1` candidate. `1.0.1` requires its own exact-tag publication evidence after the human tag exists.
+
+Never place registry credentials, Supabase values, TLS certificate/private-key contents, rendered secret-bearing NGINX configuration, auth files, environment dumps, cluster credentials, or unrestricted logs into release evidence.
 
 ## Flux handoff
 
@@ -152,20 +187,22 @@ Do not edit or reconcile the Flux cluster from this repository. Hand off only pr
 - immutable `linux/amd64` image reference and verified remote digest when available;
 - chart repository/version and verified OCI digest when available;
 - successful image/chart remote read-back evidence;
-- successful applicable Node/Helm/container validation evidence;
+- successful applicable Node/Helm/mandatory-TLS container validation evidence;
+- the required TLS mount/key contract, never the certificate/private-key values;
 - known compatibility or rollout notes.
 
 Flux #288 owns:
 
 - encrypted `agent-state-dashboard-supabase` Secret material;
+- cert-manager `Certificate`, domain, and actual TLS Secret used by deployment;
 - registry pull credentials if the selected registry ever requires them;
 - desired image/chart references and digests;
-- Tailscale and any owner-approved Cloudflare exposure;
+- Tailscale and any owner-approved Cloudflare/ExternalDNS exposure;
 - cluster reconciliation;
-- live `/healthz` and application health proof;
+- live HTTPS `/healthz` and application health proof;
 - rollback.
 
-A producer release is not considered deployed merely because publication succeeded. Conversely, changing or removing an external access layer is never proof that the K3s workload is healthy.
+A producer release is not considered deployed merely because publication succeeded. Conversely, certificate issuance or changing an external access layer is never proof that the K3s workload is healthy.
 
 ## Historical Cloudflare runtime
 
