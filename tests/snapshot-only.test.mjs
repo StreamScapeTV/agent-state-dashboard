@@ -32,11 +32,15 @@ test("retired legacy payload types are removed", () => {
   assert.doesNotMatch(typesSource, /LegacyActorSnapshot|LegacyOverviewPayload|LegacyActorsBatchPayload/);
 });
 
-test("subscription is established before bootstrap and buffered changes replay after snapshot", () => {
-  const subscribeIndex = hookSource.indexOf("subscribeToDashboardChanges(client, {");
-  const bootstrapIndex = hookSource.indexOf('void requestFullRefresh("bootstrap")');
-  assert.ok(subscribeIndex >= 0);
-  assert.ok(bootstrapIndex > subscribeIndex);
+test("subscription is registered before bootstrap and slow subscription receives a post-bootstrap reconcile", () => {
+  assert.match(hookSource, /const unsubscribe = subscribeToDashboardChanges\(client, \{/);
+  assert.match(hookSource, /Realtime subscribed; bootstrapping/);
+  assert.match(hookSource, /startBootstrap\(true\)/);
+  assert.match(hookSource, /BOOTSTRAP_SUBSCRIBE_GRACE_MS = 750/);
+  assert.match(hookSource, /window\.setTimeout\(\(\) => startBootstrap\(false\), BOOTSTRAP_SUBSCRIBE_GRACE_MS\)/);
+  assert.match(hookSource, /!socketReadyAtStart && socketLiveRef\.current/);
+  assert.match(hookSource, /Realtime joined after bootstrap start; reconciling/);
+  assert.match(hookSource, /void requestFullRefresh\("reconnect"\)/);
   assert.match(hookSource, /bufferedChangesRef\.current\.push\(change\)/);
   assert.match(hookSource, /replayRealtimeChanges/);
   assert.match(realtimeSource, /applyRealtimeChangeRows/);
@@ -46,7 +50,7 @@ test("healthy socket operation has no always-on snapshot poll and recovery recon
   assert.doesNotMatch(hookSource, /export const POLL_INTERVAL_MS\b/);
   assert.match(hookSource, /RECOVERY_POLL_INTERVAL_MS = 5_000/);
   assert.match(hookSource, /connectionState !== "reconnecting" && connectionState !== "recovering"/);
-  assert.match(hookSource, /void requestFullRefresh\("recovery"\)/);
+  assert.match(hookSource, /!reconcilingRef\.current\) void requestFullRefresh\("recovery"\)/);
   assert.match(hookSource, /void requestFullRefresh\("reconnect"\)/);
   assert.doesNotMatch(dashboardSource, /Refresh all/);
 });
