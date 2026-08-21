@@ -13,6 +13,7 @@ import {
   applyPartialSnapshot,
   beginTableRead,
   beginTableReads,
+  completeTableRead,
   createRequestIds,
   createTableReadStates,
   dashboardFreshness,
@@ -77,10 +78,7 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
       const rows = await readDashboardTable(client, table, { signal: controller.signal });
       if (controller.signal.aborted) return;
       const successAt = new Date().toISOString();
-      setTableStates((current) => {
-        const { completeTableRead } = requireTableStateOperations();
-        return completeTableRead(current, table, requestId, rows, successAt);
-      });
+      setTableStates((current) => completeTableRead(current, table, requestId, rows, successAt));
     } catch (caught) {
       if (controller.signal.aborted) return;
       const message = caught instanceof Error ? caught.message : `Dashboard read failed for ${table}`;
@@ -192,11 +190,4 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
     issueTables: tableIssues(tableStates),
     requestFullRefresh,
   };
-}
-
-// Keep completion as a normal import in production while allowing the direct
-// TypeScript transpilation tests for the pure table-state module to stay isolated.
-function requireTableStateOperations() {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require("@/lib/table-refresh-state") as typeof import("@/lib/table-refresh-state");
 }
