@@ -62,6 +62,15 @@ function actorKey(projectKey: string, identity: string): string {
   return `${projectKey}::${identity}`;
 }
 
+function compareCoordinationIdentity(
+  left: Pick<CurrentCoordinationRecord, "projectKey" | "sender" | "recipient">,
+  right: Pick<CurrentCoordinationRecord, "projectKey" | "sender" | "recipient">,
+): number {
+  return left.projectKey.localeCompare(right.projectKey)
+    || left.sender.localeCompare(right.sender, undefined, { numeric: true })
+    || left.recipient.localeCompare(right.recipient, undefined, { numeric: true });
+}
+
 export function dedupeCurrentCoordination(rows: AgentViewRow[]): CurrentCoordinationRecord[] {
   const current = new Map<string, CurrentCoordinationRecord>();
   for (const row of rows) {
@@ -69,11 +78,7 @@ export function dedupeCurrentCoordination(rows: AgentViewRow[]): CurrentCoordina
       current.set(coordinationKey(item), item);
     }
   }
-  return [...current.values()].sort((left, right) =>
-    left.projectKey.localeCompare(right.projectKey)
-    || left.recipient.localeCompare(right.recipient, undefined, { numeric: true })
-    || left.sender.localeCompare(right.sender, undefined, { numeric: true }),
-  );
+  return [...current.values()].sort(compareCoordinationIdentity);
 }
 
 export function buildCoordinationItems(
@@ -85,6 +90,7 @@ export function buildCoordinationItems(
   for (const item of coordination) unique.set(coordinationKey(item), item);
 
   return [...unique.values()]
+    .sort(compareCoordinationIdentity)
     .map((item) => ({
       key: coordinationKey(item),
       projectKey: item.projectKey,
@@ -100,12 +106,7 @@ export function buildCoordinationItems(
       blocker: firstString(item.state, ["blocker", "blocked_reason", "block_reason", "waiting_on", "waiting_for"]),
       nextAction: firstString(item.state, ["next_action", "nextAction", "next", "checkpoint"]),
       state: item.state,
-    }))
-    .sort((left, right) =>
-      left.projectKey.localeCompare(right.projectKey)
-      || left.recipient.localeCompare(right.recipient, undefined, { numeric: true })
-      || left.sender.localeCompare(right.sender, undefined, { numeric: true }),
-    );
+    }));
 }
 
 function matchesDirection(item: CoordinationBoardItem, direction: CoordinationDirection, identity: string): boolean {
