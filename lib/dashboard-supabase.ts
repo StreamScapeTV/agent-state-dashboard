@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { DashboardRealtimeChange, DashboardRealtimeEventType } from "@/lib/realtime-dashboard-state";
 import { RAW_TABLE_NAMES, type RawTableName } from "@/types/dashboard";
 
 export const AGENT_STATE_SCHEMA = "agent_private";
@@ -28,7 +29,7 @@ export interface DashboardRawSnapshot {
 
 export interface DashboardRealtimeHandlers {
   onStatus: (status: "connecting" | "live" | "reconnecting") => void;
-  onInvalidate: (table: RawTableName, eventType: string) => void;
+  onChange: (change: DashboardRealtimeChange) => void;
 }
 
 interface ReadTableOptions {
@@ -153,6 +154,16 @@ export async function readDashboardSnapshot(
   };
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function realtimeEventType(value: unknown): DashboardRealtimeEventType | null {
+  return value === "INSERT" || value === "UPDATE" || value === "DELETE" ? value : null;
+}
+
 export function subscribeToDashboardChanges(
   client: DashboardSupabaseClient,
   handlers: DashboardRealtimeHandlers,
@@ -167,10 +178,15 @@ export function subscribeToDashboardChanges(
       { event: "*", schema: AGENT_STATE_SCHEMA, table },
       (payload) => {
         if (!active) return;
-        handlers.onInvalidate(
+        const eventType = realtimeEventType(payload?.eventType);
+        if (!eventType) return;
+        handlers.onChange({
           table,
-          typeof payload?.eventType === "string" ? payload.eventType : "unknown",
-        );
+          eventType,
+          newRow: asRecord(payload?.new),
+          oldRow: asRecord(payload?.old),
+          observedAt: new Date().toISOString(),
+        });
       },
     );
   }

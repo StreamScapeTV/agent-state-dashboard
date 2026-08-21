@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  AutorenewRounded,
   CheckCircleRounded,
   ContentCopyRounded,
   ErrorOutlineRounded,
@@ -19,7 +18,6 @@ import {
   CardActionArea,
   CardContent,
   Chip,
-  CircularProgress,
   Container,
   Dialog,
   DialogActions,
@@ -480,7 +478,7 @@ export function DashboardClient() {
     loading,
     refreshing,
     issueTables,
-    requestFullRefresh,
+    activities,
   } = useDashboardTables(nowMs);
 
   const baseRows = useMemo(() => (snapshot ? buildAgentRows(snapshot, 0) : []), [snapshot]);
@@ -549,9 +547,16 @@ export function DashboardClient() {
     setStatusFilter("all");
   };
 
-  // Compatibility name retained for the existing view contract: this is only
-  // the Realtime connection state. Data freshness is rendered separately.
-  const effectiveLiveState: DashboardLiveState = connectionState;
+  const effectiveLiveState: DashboardLiveState = connectionState === "recovering"
+    ? "reconnecting"
+    : connectionState;
+  const connectionLabel = connectionState === "live"
+    ? "Live"
+    : connectionState === "recovering"
+      ? "Recovering"
+      : effectiveLiveState === "reconnecting"
+        ? "Reconnecting"
+        : "Connecting";
   const partialWarning = issueTables.length > 0
     ? issueTables.map((table) => `${table.replace("current_", "")} · ${tableHealthLabel(tableStates[table], nowMs, STALE_AFTER_MS)}`).join(" · ")
     : null;
@@ -564,18 +569,15 @@ export function DashboardClient() {
           <Typography variant="h4">Operations console</Typography>
         </Box>
         <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
-          <Chip label={`Realtime · ${effectiveLiveState}`} />
+          <Chip
+            label={`Realtime · ${connectionLabel}`}
+            color={connectionState === "live" ? "success" : connectionState === "connecting" ? "info" : "warning"}
+          />
           <Chip
             label={`Data · ${freshness}${lastRefresh ? ` · ${shortTime(lastRefresh.toISOString())}` : ""}`}
             color={freshness === "fresh" ? "success" : freshness === "loading" ? "info" : "warning"}
             variant="outlined"
           />
-          <Button
-            startIcon={refreshing ? <CircularProgress size={16} /> : <AutorenewRounded />}
-            onClick={() => { void requestFullRefresh(); }}
-          >
-            Refresh all
-          </Button>
           <Button startIcon={<StorageRounded />} onClick={() => setRawOpen(true)}>Raw tables</Button>
         </Stack>
       </Stack>
@@ -594,6 +596,24 @@ export function DashboardClient() {
           );
         })}
       </Stack>
+
+      {activities.length > 0 ? (
+        <Paper variant="outlined" sx={{ p: 1, mb: 1.5 }}>
+          <Stack direction={{ xs: "column", md: "row" }} sx={{ gap: 1, alignItems: { md: "center" } }}>
+            <Typography variant="overline" sx={{ whiteSpace: "nowrap" }}>Live activity</Typography>
+            <Stack direction="row" spacing={0.75} sx={{ overflowX: "auto", flex: 1, pb: 0.25 }}>
+              {activities.slice(0, 8).map((activity) => (
+                <Chip
+                  key={activity.id}
+                  size="small"
+                  variant="outlined"
+                  label={`${shortTime(activity.observedAt)} · ${activity.summary}`}
+                />
+              ))}
+            </Stack>
+          </Stack>
+        </Paper>
+      ) : null}
 
       {partialWarning ? (
         <Alert severity={snapshot ? "warning" : "error"} sx={{ mb: 2 }}>

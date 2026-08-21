@@ -187,16 +187,14 @@ export function dashboardFreshness(
 
 export function tableHealthLabel(
   state: TableReadState,
-  nowMs: number,
-  staleAfterMs: number,
+  _nowMs: number,
+  _staleAfterMs: number,
 ): "loading" | "refreshing" | "fresh" | "stale" | "failed" {
   if (!state.hasData) {
     if (state.loading || state.requestId === 0) return "loading";
     return "failed";
   }
-  if (state.stale || (state.lastSuccessAt && nowMs - Date.parse(state.lastSuccessAt) > staleAfterMs)) {
-    return "stale";
-  }
+  if (state.stale) return "stale";
   if (state.loading) return "refreshing";
   return "fresh";
 }
