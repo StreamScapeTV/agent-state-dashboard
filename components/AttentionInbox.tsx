@@ -21,6 +21,7 @@ import {
 } from "@mui/material";
 import { useMemo, useState } from "react";
 import { CoordinationBoard } from "@/components/CoordinationBoard";
+import { ResourcesCapacityBoard } from "@/components/ResourcesCapacityBoard";
 import { WorkAssignmentBoard } from "@/components/WorkAssignmentBoard";
 import { buildAttentionQueue, filterAttentionRows } from "@/lib/attention-inbox";
 import { formatDuration, statusLabel } from "@/lib/dashboard-model";
@@ -184,6 +185,7 @@ export function AttentionInbox({
 
       <WorkAssignmentBoard work={currentWork} agents={rows} onView={onView} />
       <CoordinationBoard agents={rows} onView={onView} />
+      <ResourcesCapacityBoard rows={rows} onView={onView} />
     </Paper>
   );
 }
