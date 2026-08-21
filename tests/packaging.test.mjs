@@ -43,7 +43,6 @@ const chartValuesSchema = JSON.parse(valuesSchema);
 const nodeVersion = nodeVersionSource.trim();
 const chartVersion = chart.match(/^version:\s*([^\s]+)$/m)?.[1];
 const chartAppVersion = chart.match(/^appVersion:\s*["']?([^"'\s]+)["']?$/m)?.[1];
-const publisherSha = "7ff890874bf8091203dddd9bfb11cb498eefe6d4";
 
 test("container builds with Node but runs only pinned NGINX", () => {
   assert.match(dockerfile, new RegExp(`ARG NODE_VERSION=${nodeVersion.replaceAll(".", "\\.")}`));
@@ -264,18 +263,27 @@ test("Helm workload matches the pure-NGINX runtime and keeps bounded security", 
   assert.doesNotMatch(deployment, /value:\s*['"]?https?:\/\/[^\s]+supabase/);
 });
 
-test("release is a thin bounded exact-tag central workflow caller", () => {
+test("release is a thin public GitHub-hosted exact-tag Central caller", () => {
   assert.match(releaseWorkflow, /run-name: Publish tagged dashboard release \$\{\{ github\.ref_name \}\}/);
+  assert.match(releaseWorkflow, /tags:\s*\n\s*- "\*\.\*\.\*"/);
   assert.match(releaseWorkflow, /group: agent-state-dashboard-release-\$\{\{ github\.ref_name \}\}/);
   assert.match(releaseWorkflow, /cancel-in-progress: false/);
-  assert.match(releaseWorkflow, new RegExp(`reusable-native-image-chart\\.yml@${publisherSha}`));
-  assert.doesNotMatch(releaseWorkflow, /reusable-native-image-chart\.yml@main/);
+  assert.match(
+    releaseWorkflow,
+    /uses: StreamScapeTV\/ci-workflows\/\.github\/workflows\/reusable-public-native-image-chart\.yml@main/,
+  );
+  assert.match(releaseWorkflow, /contents: read/);
+  assert.match(releaseWorkflow, /packages: write/);
   assert.match(releaseWorkflow, /image_name: agent-state-dashboard/);
+  assert.match(releaseWorkflow, /chart_name: agent-state-dashboard/);
   assert.match(releaseWorkflow, /chart_path: charts\/agent-state-dashboard/);
-  assert.match(releaseWorkflow, /FORGEJO_REGISTRY_USERNAME/);
-  assert.match(releaseWorkflow, /FORGEJO_REGISTRY_TOKEN/);
-  assert.doesNotMatch(releaseWorkflow, /runs-on:/);
-  assert.doesNotMatch(releaseWorkflow, /latest/);
+  assert.doesNotMatch(releaseWorkflow, /FORGEJO_REGISTRY_USERNAME|FORGEJO_REGISTRY_TOKEN/);
+  assert.doesNotMatch(releaseWorkflow, /execution_backend|runs-on:|self-hosted|\[linux,\s*amd64/);
+  assert.doesNotMatch(
+    releaseWorkflow,
+    /StreamScapeTV\/ci-workflows\/\.github\/workflows\/[^\s]+@[0-9a-f]{40}/,
+  );
+  assert.doesNotMatch(releaseWorkflow, /\blatest\b/);
 });
 
 test("local credential scratch files stay out of Git and image contexts", () => {
