@@ -26,3 +26,4 @@ jobs:
       chart_path: charts/agent-state-dashboard
       dockerfile_path: Dockerfile
       build_context: .
+      publish_latest_image: true
