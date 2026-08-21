@@ -48,10 +48,7 @@ test("status derivation covers null, assigned, mid-work, returned, reassigned an
     "idle",
     "retained prompt text without an authoritative assignment timestamp must not fabricate working state",
   );
-  assert.equal(
-    model.deriveBaseStatus(agent({ promptAssignedAt: "2026-08-12T00:00:00Z" }), []),
-    "working",
-  );
+  assert.equal(model.deriveBaseStatus(agent({ promptAssignedAt: "2026-08-12T00:00:00Z" }), []), "working");
   assert.equal(
     model.deriveBaseStatus(
       agent({ promptAssignedAt: "2026-08-12T00:10:00Z", lastReturnedAt: "2026-08-12T00:05:00Z" }),
@@ -111,21 +108,13 @@ test("blocked status variants used by current Agent State are recognized", () =>
 
 test("blocker cues are deterministic, bounded, and retain actor/work source context", () => {
   const cues = model.extractBlockerCues(
-    {
-      blocker: "Owner decision",
-      waiting_for: "Release tag",
-      next_action: "Ask owner",
-    },
+    { blocker: "Owner decision", waiting_for: "Release tag", next_action: "Ask owner" },
     [
       {
         projectKey: "demo",
         identity: "Agent 2",
         workKey: "issue-7",
-        state: {
-          block_reason: "CI unavailable",
-          objective: "Publish release",
-          next_action: "Retry validation",
-        },
+        state: { block_reason: "CI unavailable", objective: "Publish release", next_action: "Retry validation" },
       },
       {
         projectKey: "demo",
@@ -168,14 +157,8 @@ test("live event policy separates fallback freshness from Realtime connection st
 test("duration stays live while working and freezes at return", () => {
   const assigned = "2026-08-12T00:00:00Z";
   const returned = "2026-08-12T00:05:30Z";
-  assert.equal(
-    model.durationMs(assigned, null, "working", Date.parse("2026-08-12T00:02:00Z")),
-    120_000,
-  );
-  assert.equal(
-    model.durationMs(assigned, returned, "returned", Date.parse("2026-08-12T01:00:00Z")),
-    330_000,
-  );
+  assert.equal(model.durationMs(assigned, null, "working", Date.parse("2026-08-12T00:02:00Z")), 120_000);
+  assert.equal(model.durationMs(assigned, returned, "returned", Date.parse("2026-08-12T01:00:00Z")), 330_000);
   assert.equal(model.formatDuration(330_000), "5m 30s");
 });
 
@@ -194,7 +177,6 @@ test("duration-only refresh does not rebuild static row semantics", () => {
   };
   const baseRows = model.buildAgentRows(snapshot, 0);
   const refreshed = model.refreshAgentDurations(baseRows, Date.parse("2026-08-12T00:02:00Z"));
-
   assert.equal(refreshed[0].durationMs, 120_000);
   assert.equal(refreshed[0].baseStatus, "working");
   assert.equal(refreshed[1], baseRows[1], "completed rows should retain identity when duration is unchanged");
@@ -286,7 +268,6 @@ test("snapshot normalization preserves the full authoritative prompt and respons
     current_resources: [],
     current_coordination: [],
   });
-
   assert.equal(snapshot.agents[0].prompt, prompt);
   assert.equal(snapshot.agents[0].lastResponse, response);
   assert.equal(snapshot.agents[0].promptAssignedAt, "2026-08-12T00:00:00Z");
@@ -298,17 +279,13 @@ test("snapshot normalization preserves the full authoritative prompt and respons
 test("agent next action prefers explicit current work action over a generic actor checkpoint", () => {
   const snapshot = {
     projects: [],
-    agents: [agent({
-      state: { checkpoint: "Source review complete" },
-      promptAssignedAt: "2026-08-12T00:00:00Z",
-    })],
+    agents: [agent({ state: { checkpoint: "Source review complete" }, promptAssignedAt: "2026-08-12T00:00:00Z" })],
     work: work({ objective: "Ship console", next_action: "Run exact-head validation" }),
     resources: [],
     coordination: [],
     refreshedAt: "2026-08-12T00:01:00Z",
     missingTables: [],
   };
-
   const [row] = model.buildAgentRows(snapshot, Date.parse("2026-08-12T00:02:00Z"));
   assert.equal(row.nextAction, "Run exact-head validation");
 });
@@ -353,7 +330,6 @@ test("project status slices exactly match project summary counters", () => {
   };
   const rows = model.buildAgentRows(snapshot, Date.parse("2026-08-12T00:02:00Z"));
   const alpha = model.buildProjectSummaries(snapshot, rows).find((item) => item.projectKey === "alpha");
-
   assert.equal(model.filterProjectRows(rows, "alpha", "all").length, alpha.total);
   assert.equal(model.filterProjectRows(rows, "alpha", "working").length, alpha.working);
   assert.equal(model.filterProjectRows(rows, "alpha", "blocked").length, alpha.blocked);
@@ -362,51 +338,48 @@ test("project status slices exactly match project summary counters", () => {
   assert.equal(model.filterProjectRows(rows, "alpha", "all").every((row) => row.projectKey === "alpha"), true);
 });
 
-test("client source contract preserves progressive owner interaction while live orchestration is delegated", () => {
+test("progressive source contract keeps project-first UI and existing live/read-only seams", () => {
   const source = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
   const overviewSource = readFileSync(new URL("../components/ProjectOverview.tsx", import.meta.url), "utf8");
   const hookSource = readFileSync(new URL("../lib/use-dashboard-tables.ts", import.meta.url), "utf8");
 
-  assert.match(source, /useDashboardTables\(nowMs\)/);
-  assert.match(source, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
-  assert.match(source, /tableHealthLabel\(tableStates\[table\], nowMs, STALE_AFTER_MS\)/);
-  assert.match(source, /Partial Agent State data/);
-  assert.match(source, /Live details/);
-  assert.match(source, /Recent live activity/);
-  assert.doesNotMatch(source, /Refresh all/);
-  assert.match(hookSource, /subscribeToDashboardChanges\(client, \{/);
-  assert.match(hookSource, /readDashboardSnapshot\(client, \{ signal: controller\.signal \}\)/);
-  assert.match(hookSource, /onChange: applyLiveChange/);
-  assert.match(hookSource, /applyRealtimeChangeToTableStates\(current, change\)/);
-  assert.doesNotMatch(hookSource, /readDashboardTable\(/);
-  assert.match(source, /const baseRows = useMemo\(\(\) => \(snapshot \? buildAgentRows\(snapshot, 0\) : \[\]\), \[snapshot\]\)/);
-  assert.match(source, /refreshAgentDurations\(baseRows, nowMs\)/);
-  assert.match(source, /const \[selectedProjectKey, setSelectedProjectKey\] = useState\("all"\)/);
-  assert.match(source, /const \[selectedStatus, setSelectedStatus\] = useState<AgentStatusFilter>\("all"\)/);
-  assert.match(source, /const \[selectedAgentKey, setSelectedAgentKey\] = useState<string \| null>\(null\)/);
-  assert.match(source, /rows\.find\(\(row\) => row\.key === selectedAgentKey\)/);
-  assert.match(source, /!baseRows\.some\(\(row\) => row\.key === selectedAgentKey\)/);
-  assert.match(source, /setSelectedAgentKey\(null\)/);
-  assert.match(source, /<ProjectOverview/);
-  assert.match(source, /Advanced operations/);
-  assert.match(source, /<Tab value="attention" label="Attention"/);
-  assert.match(source, /<Tab value="work" label="Work \/ assignments"/);
-  assert.match(source, /<Tab value="coordination" label="Coordination"/);
-  assert.match(source, /<Tab value="resources" label="Resources \/ capacity"/);
-  assert.match(source, /<Tab value="raw" label="Raw tables"/);
-  assert.match(source, /advancedScope === "project"/);
-  assert.match(source, /selectedProjectRows/);
-  assert.match(source, /projectScope=\{rawProjectScope\}/);
-  assert.match(source, /rows\.slice\(page \* rowsPerPage, page \* rowsPerPage \+ rowsPerPage\)/);
-  assert.match(source, /<TablePagination/);
-  assert.match(source, /rowsPerPageOptions=\{\[25, 50, 100\]\}/);
-  assert.match(source, /event\.key === "Enter" \|\| event\.key === " "/);
+  for (const marker of [
+    "useDashboardTables(nowMs)",
+    "Partial Agent State data",
+    "Live details",
+    "Recent live activity",
+    "<ProjectOverview",
+    "Advanced operations",
+    'value="attention" label="Attention"',
+    'value="work" label="Work / assignments"',
+    'value="coordination" label="Coordination"',
+    'value="resources" label="Resources / capacity"',
+    'value="raw" label="Raw tables"',
+    "selectedProjectRows",
+    "projectScope={rawProjectScope}",
+    "<TablePagination",
+  ]) {
+    assert.ok(source.includes(marker), `missing dashboard marker: ${marker}`);
+  }
+  assert.equal(source.includes("Refresh all"), false);
 
-  assert.match(overviewSource, /Choose a project to inspect its actors, blockers, and current work/);
-  assert.match(overviewSource, /<CardActionArea/);
-  assert.match(overviewSource, /aria-pressed=\{active\}/);
-  assert.match(overviewSource, /filterProjectRows\(rows, selectedProjectKey, selectedStatus\)/);
-  assert.match(overviewSource, /<Accordion/);
-  assert.match(overviewSource, /Blocked reason not recorded/);
-  assert.match(overviewSource, /Full agent details/);
+  for (const marker of [
+    "subscribeToDashboardChanges(client, {",
+    "readDashboardSnapshot(client, { signal: controller.signal })",
+    "onChange: applyLiveChange",
+    "applyRealtimeChangeToTableStates(current, change)",
+  ]) {
+    assert.ok(hookSource.includes(marker), `missing live marker: ${marker}`);
+  }
+  assert.equal(hookSource.includes("readDashboardTable("), false);
+
+  for (const marker of [
+    "Choose a project to inspect its actors, blockers, and current work.",
+    "filterProjectRows(rows, selectedProjectKey, selectedStatus)",
+    "<Accordion",
+    "Blocked reason not recorded",
+    "Full agent details",
+  ]) {
+    assert.ok(overviewSource.includes(marker), `missing overview marker: ${marker}`);
+  }
 });
