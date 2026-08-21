@@ -204,7 +204,9 @@ export function tableHealthLabel(
 export function tableIssues(states: TableReadStates): RawTableName[] {
   return RAW_TABLE_NAMES.filter((table) => {
     const state = states[table];
-    return state.requestId > 0 && (!state.hasData || state.stale || Boolean(state.error));
+    return state.requestId > 0
+      && !state.loading
+      && (!state.hasData || state.stale || Boolean(state.error));
   });
 }
 
