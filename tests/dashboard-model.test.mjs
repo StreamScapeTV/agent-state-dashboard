@@ -287,15 +287,19 @@ test("project summaries preserve returned attention counts and current project f
   assert.equal(summary.nextAction, "Merge");
 });
 
-test("client source contract uses Supabase proxy transport while preserving duration, detail, raw pagination and accessibility wiring", () => {
+test("client source contract preserves owner interaction wiring while table orchestration is delegated", () => {
   const source = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
+  const hookSource = readFileSync(new URL("../lib/use-dashboard-tables.ts", import.meta.url), "utf8");
 
-  assert.match(source, /readDashboardSnapshot\(client, \{ signal: controller\.signal \}\)/);
+  assert.match(source, /useDashboardTables\(nowMs\)/);
   assert.match(source, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
-  assert.match(source, /subscribeToDashboardChanges\(client, \{/);
-  assert.match(source, /applyLiveEvent\("status", \{ status: status === "connecting" \? "starting" : status \}\)/);
-  assert.match(source, /onInvalidate: \(\) => applyLiveEvent\("invalidate"\)/);
-  assert.match(source, /window\.setInterval\(requestRefresh, POLL_INTERVAL_MS\)/);
+  assert.match(source, /tableHealthLabel\(tableStates\[table\], nowMs, STALE_AFTER_MS\)/);
+  assert.match(source, /Partial Agent State data/);
+  assert.match(source, /Realtime · \$\{effectiveLiveState\}/);
+  assert.match(source, /Data · \$\{freshness\}/);
+  assert.match(hookSource, /subscribeToDashboardChanges\(client, \{/);
+  assert.match(hookSource, /readDashboardSnapshot\(client, \{ signal: controller\.signal \}\)/);
+  assert.match(hookSource, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
   assert.match(source, /const baseRows = useMemo\(\(\) => \(snapshot \? buildAgentRows\(snapshot, 0\) : \[\]\), \[snapshot\]\)/);
   assert.match(source, /refreshAgentDurations\(baseRows, nowMs\)/);
   assert.match(source, /const \[selectedAgentKey, setSelectedAgentKey\] = useState<string \| null>\(null\)/);

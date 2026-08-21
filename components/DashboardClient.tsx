@@ -48,30 +48,26 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AttentionInbox } from "@/components/AttentionInbox";
 import {
   attentionRank,
   buildAgentRows,
   buildProjectSummaries,
   formatDuration,
-  liveEventDecision,
-  normalizeSnapshot,
   refreshAgentDurations,
   statusLabel,
-  type DashboardLiveEvent,
   type DashboardLiveState,
 } from "@/lib/dashboard-model";
 import {
   getDashboardSupabaseClient,
-  readDashboardSnapshot,
   readDashboardTable,
-  subscribeToDashboardChanges,
 } from "@/lib/dashboard-supabase";
+import { tableHealthLabel } from "@/lib/table-refresh-state";
+import { STALE_AFTER_MS, useDashboardTables } from "@/lib/use-dashboard-tables";
 import type {
   AgentStatusFilter,
   AgentViewRow,
-  DashboardSnapshot,
   IdentityKind,
   ProjectSummary,
   RawTableName,
@@ -80,9 +76,6 @@ import { RAW_TABLE_NAMES } from "@/types/dashboard";
 
 type SortKey = "attention" | "project" | "identity" | "duration" | "assigned" | "returned";
 type SortDirection = "asc" | "desc";
-
-const POLL_INTERVAL_MS = 30_000;
-const STALE_AFTER_MS = 75_000;
 
 function displayTime(value: string | null): string {
   if (!value) return "—";
@@ -114,6 +107,15 @@ function statusIcon(row: AgentViewRow) {
   if (row.baseStatus === "returned") return <CheckCircleRounded fontSize="small" />;
   if (row.baseStatus === "working") return <HourglassTopRounded fontSize="small" />;
   return <PauseCircleRounded fontSize="small" />;
+}
+
+function tableHealthColor(
+  value: ReturnType<typeof tableHealthLabel>,
+): "default" | "info" | "success" | "warning" | "error" {
+  if (value === "failed") return "error";
+  if (value === "stale") return "warning";
+  if (value === "loading" || value === "refreshing") return "info";
+  return "success";
 }
 
 function JsonPanel({ value }: { value: unknown }) {
@@ -391,49 +393,33 @@ function AgentTable({ rows, sortKey, sortDirection, sort, onView }: AgentTablePr
         <TableHead>
           <TableRow>
             <TableCell>
-              <TableSortLabel
-                active={sortKey === "project"}
-                direction={dir("project")}
-                onClick={() => sort("project")}
-              >
+              <TableSortLabel active={sortKey === "project"} direction={dir("project")} onClick={() => sort("project")}>
                 Project
               </TableSortLabel>
             </TableCell>
             <TableCell>
-              <TableSortLabel
-                active={sortKey === "identity"}
-                direction={dir("identity")}
-                onClick={() => sort("identity")}
-              >
+              <TableSortLabel active={sortKey === "identity"} direction={dir("identity")} onClick={() => sort("identity")}>
                 Identity
               </TableSortLabel>
             </TableCell>
             <TableCell>
-              <TableSortLabel
-                active={sortKey === "attention"}
-                direction={dir("attention")}
-                onClick={() => sort("attention")}
-              >
+              <TableSortLabel active={sortKey === "attention"} direction={dir("attention")} onClick={() => sort("attention")}>
                 Status
               </TableSortLabel>
             </TableCell>
             <TableCell>Current work / next action</TableCell>
             <TableCell>
-              <TableSortLabel
-                active={sortKey === "assigned"}
-                direction={dir("assigned")}
-                onClick={() => sort("assigned")}
-              >
+              <TableSortLabel active={sortKey === "assigned"} direction={dir("assigned")} onClick={() => sort("assigned")}>
                 Assigned
               </TableSortLabel>
             </TableCell>
-            <TableCell>Returned</TableCell>
             <TableCell>
-              <TableSortLabel
-                active={sortKey === "duration"}
-                direction={dir("duration")}
-                onClick={() => sort("duration")}
-              >
+              <TableSortLabel active={sortKey === "returned"} direction={dir("returned")} onClick={() => sort("returned")}>
+                Returned
+              </TableSortLabel>
+            </TableCell>
+            <TableCell>
+              <TableSortLabel active={sortKey === "duration"} direction={dir("duration")} onClick={() => sort("duration")}>
                 Duration
               </TableSortLabel>
             </TableCell>
@@ -449,32 +435,17 @@ function AgentTable({ rows, sortKey, sortDirection, sort, onView }: AgentTablePr
                 <Typography variant="caption">{row.identityKind}</Typography>
               </TableCell>
               <TableCell>
-                <Chip
-                  size="small"
-                  icon={statusIcon(row)}
-                  label={statusLabel(row)}
-                  color={statusColor(row)}
-                />
+                <Chip size="small" icon={statusIcon(row)} label={statusLabel(row)} color={statusColor(row)} />
               </TableCell>
               <TableCell>
                 <Typography noWrap>{row.workSummary}</Typography>
-                {row.nextAction ? (
-                  <Typography variant="caption" noWrap>
-                    Next: {row.nextAction}
-                  </Typography>
-                ) : null}
+                {row.nextAction ? <Typography variant="caption" noWrap>Next: {row.nextAction}</Typography> : null}
               </TableCell>
               <TableCell>{shortTime(row.assignedAt)}</TableCell>
               <TableCell>{shortTime(row.lastReturnedAt)}</TableCell>
               <TableCell>{formatDuration(row.durationMs)}</TableCell>
               <TableCell>
-                <Button
-                  size="small"
-                  startIcon={<VisibilityRounded />}
-                  onClick={() => onView(row.key)}
-                >
-                  View
-                </Button>
+                <Button size="small" startIcon={<VisibilityRounded />} onClick={() => onView(row.key)}>View</Button>
               </TableCell>
             </TableRow>
           ))}
@@ -485,13 +456,6 @@ function AgentTable({ rows, sortKey, sortDirection, sort, onView }: AgentTablePr
 }
 
 export function DashboardClient() {
-  const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshToken, setRefreshToken] = useState(0);
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const [liveState, setLiveState] = useState<DashboardLiveState>("connecting");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [query, setQuery] = useState("");
   const [projectFilter, setProjectFilter] = useState("all");
@@ -501,65 +465,23 @@ export function DashboardClient() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [selectedAgentKey, setSelectedAgentKey] = useState<string | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
-  const loaded = useRef(false);
-  const requestRefresh = useCallback(() => setRefreshToken((value) => value + 1), []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    if (loaded.current) setRefreshing(true);
-    else setLoading(true);
-    setError(null);
-
-    const client = getDashboardSupabaseClient();
-    readDashboardSnapshot(client, { signal: controller.signal })
-      .then((rawSnapshot) => normalizeSnapshot(rawSnapshot))
-      .then((value) => {
-        setSnapshot(value);
-        const refreshedAt = value.refreshedAt ? new Date(value.refreshedAt) : new Date();
-        setLastRefresh(Number.isNaN(refreshedAt.getTime()) ? new Date() : refreshedAt);
-        loaded.current = true;
-      })
-      .catch((caught) => {
-        if (!controller.signal.aborted) {
-          setError(caught instanceof Error ? caught.message : "Dashboard snapshot could not be loaded.");
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      });
-
-    return () => controller.abort();
-  }, [refreshToken]);
-
-  useEffect(() => {
-    const applyLiveEvent = (kind: DashboardLiveEvent, payload?: unknown) => {
-      const decision = liveEventDecision(kind, payload);
-      if (decision.state) setLiveState(decision.state);
-      if (decision.refresh) requestRefresh();
-    };
-
-    const client = getDashboardSupabaseClient();
-    const unsubscribe = subscribeToDashboardChanges(client, {
-      onStatus: (status) => {
-        applyLiveEvent("status", { status: status === "connecting" ? "starting" : status });
-      },
-      onInvalidate: () => applyLiveEvent("invalidate"),
-    });
-    const poll = window.setInterval(requestRefresh, POLL_INTERVAL_MS);
-
-    return () => {
-      unsubscribe();
-      window.clearInterval(poll);
-    };
-  }, [requestRefresh]);
+  const {
+    tableStates,
+    snapshot,
+    connectionState,
+    freshness,
+    lastRefresh,
+    loading,
+    refreshing,
+    issueTables,
+    requestFullRefresh,
+  } = useDashboardTables(nowMs);
 
   const baseRows = useMemo(() => (snapshot ? buildAgentRows(snapshot, 0) : []), [snapshot]);
   const rows = useMemo(() => refreshAgentDurations(baseRows, nowMs), [baseRows, nowMs]);
@@ -584,10 +506,7 @@ export function DashboardClient() {
     const filtered = rows.filter((row) =>
       (projectFilter === "all" || row.projectKey === projectFilter)
       && (identityFilter === "all" || row.identityKind === identityFilter)
-      && (
-        statusFilter === "all"
-        || (statusFilter === "blocked" ? row.blocked : row.baseStatus === statusFilter)
-      )
+      && (statusFilter === "all" || (statusFilter === "blocked" ? row.blocked : row.baseStatus === statusFilter))
       && (
         !needle
         || [
@@ -599,10 +518,7 @@ export function DashboardClient() {
           row.workSummary,
           row.nextAction ?? "",
           statusLabel(row),
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(needle)
+        ].join(" ").toLowerCase().includes(needle)
       ),
     );
     const sign = sortDirection === "asc" ? 1 : -1;
@@ -612,20 +528,15 @@ export function DashboardClient() {
       if (sortKey === "project") value = a.projectKey.localeCompare(b.projectKey);
       if (sortKey === "identity") value = a.identity.localeCompare(b.identity, undefined, { numeric: true });
       if (sortKey === "duration") value = (a.durationMs ?? -1) - (b.durationMs ?? -1);
-      if (sortKey === "assigned") {
-        value = (Date.parse(a.assignedAt ?? "") || 0) - (Date.parse(b.assignedAt ?? "") || 0);
-      }
-      if (sortKey === "returned") {
-        value = (Date.parse(a.lastReturnedAt ?? "") || 0) - (Date.parse(b.lastReturnedAt ?? "") || 0);
-      }
+      if (sortKey === "assigned") value = (Date.parse(a.assignedAt ?? "") || 0) - (Date.parse(b.assignedAt ?? "") || 0);
+      if (sortKey === "returned") value = (Date.parse(a.lastReturnedAt ?? "") || 0) - (Date.parse(b.lastReturnedAt ?? "") || 0);
       return (value || a.key.localeCompare(b.key)) * sign;
     });
   }, [rows, projectFilter, identityFilter, statusFilter, query, sortKey, sortDirection]);
 
   const sort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDirection((value) => (value === "asc" ? "desc" : "asc"));
-    } else {
+    if (sortKey === key) setSortDirection((value) => (value === "asc" ? "desc" : "asc"));
+    else {
       setSortKey(key);
       setSortDirection("asc");
     }
@@ -638,69 +549,76 @@ export function DashboardClient() {
     setStatusFilter("all");
   };
 
-  const effectiveLiveState: DashboardLiveState =
-    lastRefresh && nowMs - lastRefresh.getTime() > STALE_AFTER_MS ? "stale" : liveState;
+  // Compatibility name retained for the existing view contract: this is only
+  // the Realtime connection state. Data freshness is rendered separately.
+  const effectiveLiveState: DashboardLiveState = connectionState;
+  const partialWarning = issueTables.length > 0
+    ? issueTables.map((table) => `${table.replace("current_", "")} · ${tableHealthLabel(tableStates[table], nowMs, STALE_AFTER_MS)}`).join(" · ")
+    : null;
 
   return (
     <Container maxWidth={false} sx={{ py: 2 }}>
-      <Stack
-        direction={{ xs: "column", md: "row" }}
-        sx={{ justifyContent: "space-between", gap: 2, mb: 2 }}
-      >
+      <Stack direction={{ xs: "column", md: "row" }} sx={{ justifyContent: "space-between", gap: 2, mb: 2 }}>
         <Box>
           <Typography variant="overline">STREAMSCAPETV · AGENT STATE</Typography>
           <Typography variant="h4">Operations console</Typography>
         </Box>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+          <Chip label={`Realtime · ${effectiveLiveState}`} />
           <Chip
-            label={`${effectiveLiveState}${lastRefresh ? ` · ${shortTime(lastRefresh.toISOString())}` : ""}`}
+            label={`Data · ${freshness}${lastRefresh ? ` · ${shortTime(lastRefresh.toISOString())}` : ""}`}
+            color={freshness === "fresh" ? "success" : freshness === "loading" ? "info" : "warning"}
+            variant="outlined"
           />
           <Button
             startIcon={refreshing ? <CircularProgress size={16} /> : <AutorenewRounded />}
-            onClick={requestRefresh}
+            onClick={() => { void requestFullRefresh(); }}
           >
-            Refresh
+            Refresh all
           </Button>
-          <Button startIcon={<StorageRounded />} onClick={() => setRawOpen(true)}>
-            Raw tables
-          </Button>
+          <Button startIcon={<StorageRounded />} onClick={() => setRawOpen(true)}>Raw tables</Button>
         </Stack>
       </Stack>
-      {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
+
+      <Stack direction="row" spacing={0.75} sx={{ flexWrap: "wrap", mb: 1 }}>
+        {RAW_TABLE_NAMES.map((table) => {
+          const health = tableHealthLabel(tableStates[table], nowMs, STALE_AFTER_MS);
+          return (
+            <Chip
+              key={table}
+              size="small"
+              label={`${table.replace("current_", "")} · ${health}`}
+              color={tableHealthColor(health)}
+              variant={health === "fresh" ? "outlined" : "filled"}
+            />
+          );
+        })}
+      </Stack>
+
+      {partialWarning ? (
+        <Alert severity={snapshot ? "warning" : "error"} sx={{ mb: 2 }}>
+          {snapshot ? "Partial Agent State data" : "Agent State data unavailable"}: {partialWarning}
+        </Alert>
+      ) : null}
       {refreshing ? <LinearProgress sx={{ mb: 2 }} /> : null}
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: { xs: "repeat(2,1fr)", md: "repeat(4,1fr)" },
-          gap: 1,
-          mb: 2,
-        }}
-      >
+
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2,1fr)", md: "repeat(4,1fr)" }, gap: 1, mb: 2 }}>
         {loading && !snapshot ? (
           <Skeleton height={100} />
-        ) : (
+        ) : snapshot ? (
           <>
             <Paper sx={{ p: 1 }}><Typography>Agents {rows.length}</Typography></Paper>
-            <Paper sx={{ p: 1 }}>
-              <Typography>Working {rows.filter((row) => row.baseStatus === "working").length}</Typography>
-            </Paper>
-            <Paper sx={{ p: 1 }}>
-              <Typography>Returned {rows.filter((row) => row.baseStatus === "returned").length}</Typography>
-            </Paper>
-            <Paper sx={{ p: 1 }}>
-              <Typography>Blocked {rows.filter((row) => row.blocked).length}</Typography>
-            </Paper>
+            <Paper sx={{ p: 1 }}><Typography>Working {rows.filter((row) => row.baseStatus === "working").length}</Typography></Paper>
+            <Paper sx={{ p: 1 }}><Typography>Returned {rows.filter((row) => row.baseStatus === "returned").length}</Typography></Paper>
+            <Paper sx={{ p: 1 }}><Typography>Blocked {rows.filter((row) => row.blocked).length}</Typography></Paper>
           </>
+        ) : (
+          <Paper sx={{ p: 1, gridColumn: "1 / -1" }}><Typography>No current Agent State table data is available.</Typography></Paper>
         )}
       </Box>
+
       <ProjectCards projects={projects} selected={projectFilter} onSelect={setProjectFilter} />
-      <AttentionInbox
-        rows={rows}
-        projectFilter={projectFilter}
-        identityFilter={identityFilter}
-        nowMs={nowMs}
-        onView={setSelectedAgentKey}
-      />
+      <AttentionInbox rows={rows} projectFilter={projectFilter} identityFilter={identityFilter} nowMs={nowMs} onView={setSelectedAgentKey} />
       <Paper variant="outlined">
         <Stack direction={{ xs: "column", lg: "row" }} sx={{ gap: 1, p: 1 }}>
           <TextField
@@ -708,38 +626,18 @@ export function DashboardClient() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search…"
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchRounded />
-                  </InputAdornment>
-                ),
-              },
-            }}
+            slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRounded /></InputAdornment> } }}
           />
           <FormControl size="small">
             <InputLabel>Project</InputLabel>
-            <Select
-              value={projectFilter}
-              label="Project"
-              onChange={(event) => setProjectFilter(String(event.target.value))}
-            >
+            <Select value={projectFilter} label="Project" onChange={(event) => setProjectFilter(String(event.target.value))}>
               <MenuItem value="all">All projects</MenuItem>
-              {projects.map((project) => (
-                <MenuItem key={project.projectKey} value={project.projectKey}>
-                  {project.projectKey}
-                </MenuItem>
-              ))}
+              {projects.map((project) => <MenuItem key={project.projectKey} value={project.projectKey}>{project.projectKey}</MenuItem>)}
             </Select>
           </FormControl>
           <FormControl size="small">
             <InputLabel>Identity</InputLabel>
-            <Select
-              value={identityFilter}
-              label="Identity"
-              onChange={(event) => setIdentityFilter(event.target.value as IdentityKind | "all")}
-            >
+            <Select value={identityFilter} label="Identity" onChange={(event) => setIdentityFilter(event.target.value as IdentityKind | "all")}>
               <MenuItem value="all">All identities</MenuItem>
               <MenuItem value="agent">Agent N</MenuItem>
               <MenuItem value="codex">Codex N</MenuItem>
@@ -750,11 +648,7 @@ export function DashboardClient() {
           </FormControl>
           <FormControl size="small">
             <InputLabel>Status</InputLabel>
-            <Select
-              value={statusFilter}
-              label="Status"
-              onChange={(event) => setStatusFilter(event.target.value as AgentStatusFilter)}
-            >
+            <Select value={statusFilter} label="Status" onChange={(event) => setStatusFilter(event.target.value as AgentStatusFilter)}>
               <MenuItem value="all">All statuses</MenuItem>
               <MenuItem value="working">Working</MenuItem>
               <MenuItem value="returned">Returned</MenuItem>
@@ -762,17 +656,9 @@ export function DashboardClient() {
               <MenuItem value="idle">Idle</MenuItem>
             </Select>
           </FormControl>
-          <IconButton aria-label="Clear filters" onClick={clearFilters}>
-            <SearchRounded />
-          </IconButton>
+          <IconButton aria-label="Clear filters" onClick={clearFilters}><SearchRounded /></IconButton>
         </Stack>
-        <AgentTable
-          rows={filteredRows}
-          sortKey={sortKey}
-          sortDirection={sortDirection}
-          sort={sort}
-          onView={setSelectedAgentKey}
-        />
+        <AgentTable rows={filteredRows} sortKey={sortKey} sortDirection={sortDirection} sort={sort} onView={setSelectedAgentKey} />
       </Paper>
       <AgentDetailDialog row={selectedAgent} onClose={() => setSelectedAgentKey(null)} />
       <RawTablesDialog open={rawOpen} onClose={() => setRawOpen(false)} />
