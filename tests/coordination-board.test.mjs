@@ -215,7 +215,7 @@ test("UI defaults to Orchestrator inbox, provides raw JSON fallback and remains 
 
   assert.match(source, /useState<CoordinationDirection>\("inbox"\)/);
   assert.match(source, /useState\("Orchestrator"\)/);
-  assert.match(source, /Resolved\/deleted coordination disappears on refresh; no history or acknowledgement ledger is retained\./);
+  assert.match(source, /Resolved\/deleted coordination disappears on refresh; no past routing or acknowledgement ledger is retained\./);
   assert.match(source, /JSON\.stringify\(rawItem\.state, null, 2\)/);
   assert.match(source, />Inbox</);
   assert.match(source, />Outbox</);
