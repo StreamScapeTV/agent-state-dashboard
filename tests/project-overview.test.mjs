@@ -4,6 +4,7 @@ import test from "node:test";
 
 const dashboardSource = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
 const overviewSource = readFileSync(new URL("../components/ProjectOverview.tsx", import.meta.url), "utf8");
+const activitySource = readFileSync(new URL("../components/ActivityLogView.tsx", import.meta.url), "utf8");
 const attentionSource = readFileSync(new URL("../components/AttentionInbox.tsx", import.meta.url), "utf8");
 
 test("console is project-first with progressive status and advanced drill-down", () => {
@@ -39,11 +40,18 @@ test("advanced operations inherit project scope and keep heavy boards out of att
   assert.equal(attentionSource.includes("ResourcesCapacityBoard"), false);
 });
 
-test("raw tables and live diagnostics stay progressively disclosed", () => {
+test("Logs / Activity, raw tables and live diagnostics stay progressively disclosed", () => {
   assert.ok(dashboardSource.includes("Live details"));
-  assert.ok(dashboardSource.includes("Recent live activity"));
+  assert.ok(dashboardSource.includes("Recent live activity is available under Logs / Activity"));
+  assert.ok(dashboardSource.includes('value="logs" label="Logs / Activity"'));
+  assert.ok(dashboardSource.includes("<ActivityLogView activities={activities} projectScope={rawProjectScope}"));
   assert.ok(dashboardSource.includes('value="raw" label="Raw tables"'));
   assert.ok(dashboardSource.includes("projectScope={rawProjectScope}"));
   assert.ok(dashboardSource.includes("Open raw tables"));
   assert.ok(dashboardSource.includes("Raw current-table explorer"));
+
+  assert.ok(activitySource.includes("Session-only live activity"));
+  assert.ok(activitySource.includes("Reloading clears this view"));
+  assert.ok(activitySource.includes("snapshots are not backfilled or presented as historical audit events"));
+  assert.equal(dashboardSource.includes("activities.slice(0, 8)"), false);
 });
