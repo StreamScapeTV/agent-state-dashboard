@@ -171,7 +171,8 @@ export function dashboardFreshness(
 ): DashboardFreshness {
   const values = RAW_TABLE_NAMES.map((table) => states[table]);
   if (!values.some((state) => state.hasData)) {
-    return values.some((state) => state.loading) ? "loading" : "partial";
+    if (values.some((state) => state.error)) return "partial";
+    return "loading";
   }
 
   if (values.some((state) => state.error && !state.hasData)) return "partial";
@@ -190,7 +191,7 @@ export function tableHealthLabel(
   staleAfterMs: number,
 ): "loading" | "refreshing" | "fresh" | "stale" | "failed" {
   if (!state.hasData) {
-    if (state.loading) return "loading";
+    if (state.loading || state.requestId === 0) return "loading";
     return "failed";
   }
   if (state.stale || (state.lastSuccessAt && nowMs - Date.parse(state.lastSuccessAt) > staleAfterMs)) {
@@ -203,7 +204,7 @@ export function tableHealthLabel(
 export function tableIssues(states: TableReadStates): RawTableName[] {
   return RAW_TABLE_NAMES.filter((table) => {
     const state = states[table];
-    return !state.hasData || state.stale || Boolean(state.error);
+    return state.requestId > 0 && (!state.hasData || state.stale || Boolean(state.error));
   });
 }
 
