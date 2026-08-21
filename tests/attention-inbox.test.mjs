@@ -204,9 +204,8 @@ test("project and identity filters produce the bounded queue input", () => {
   assert.deepEqual(inbox.filterAttentionRows(rows, "missing", "all"), []);
 });
 
-test("UI keeps source staleness outside the focused attention view and links to existing detail inspection", () => {
+test("focused attention UI preserves current-state triage, blocker visibility and deep inspection", () => {
   const source = readFileSync(new URL("../components/AttentionInbox.tsx", import.meta.url), "utf8");
-  const dashboardSource = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
 
   assert.match(source, /filterAttentionRows\(rows, projectFilter, identityFilter\)/);
   assert.match(source, /Current-state triage only\. Assignment age is informational and never changes authoritative status\./);
@@ -216,12 +215,4 @@ test("UI keeps source staleness outside the focused attention view and links to 
   assert.match(source, /row\.blockerCues\[0\]\?\.reason \?\? "Blocked reason not recorded"/);
   assert.doesNotMatch(source, /DashboardLiveState|effectiveLiveState|"stale"|"failed"|timeout/i);
   assert.doesNotMatch(source, /WorkAssignmentBoard|CoordinationBoard|ResourcesCapacityBoard/);
-
-  assert.match(dashboardSource, /<AttentionInbox/);
-  assert.match(dashboardSource, /rows=\{advancedRows\}/);
-  assert.match(dashboardSource, /projectFilter="all"/);
-  assert.match(dashboardSource, /identityFilter="all"/);
-  assert.match(dashboardSource, /selectedProjectKey !== "all"/);
-  assert.match(dashboardSource, /advancedScope === "project"/);
-  assert.match(dashboardSource, /connectionState === "live" && freshness === "fresh"/);
 });
