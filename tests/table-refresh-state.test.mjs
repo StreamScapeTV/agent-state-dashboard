@@ -202,23 +202,29 @@ test("latest success timestamp is independent from table error state", () => {
   assert.equal(state.hasAnyTableLoading(current), false);
 });
 
-test("client source contract scopes invalidation, coalesces bursts, polls full convergence and aborts safely", () => {
-  const source = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
+test("client source contract scopes invalidation, coalesces bursts, polls convergence and aborts safely", () => {
+  const hookSource = readFileSync(new URL("../lib/use-dashboard-tables.ts", import.meta.url), "utf8");
+  const dashboardSource = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
+  const transportSource = readFileSync(new URL("../lib/dashboard-supabase.ts", import.meta.url), "utf8");
 
-  assert.match(source, /onInvalidate: \(table\) => \{/);
-  assert.match(source, /queueTableRefresh\(table\)/);
-  assert.match(source, /pendingInvalidationsRef\.current\.add\(table\)/);
-  assert.match(source, /window\.setTimeout/);
-  assert.match(source, /INVALIDATION_DEBOUNCE_MS/);
-  assert.match(source, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
-  assert.match(source, /readDashboardSnapshot\(client, \{ signal: controller\.signal \}\)/);
-  assert.match(source, /window\.setInterval\(\(\) => \{\s*void requestFullRefresh\(\);\s*\}, POLL_INTERVAL_MS\)/);
-  assert.match(source, /requestSequenceRef/);
-  assert.match(source, /controller\.abort\(\)/);
-  assert.match(source, /tableControllersRef/);
-  assert.match(source, /fullControllerRef/);
-  assert.match(source, /Partial Agent State data/);
-  assert.match(source, /tableHealthLabel/);
-  assert.match(source, /dashboardFreshness/);
-  assert.doesNotMatch(source, /data-source.*baseStatus|baseStatus.*data-source/i);
+  assert.match(hookSource, /onInvalidate: \(table\) => \{/);
+  assert.match(hookSource, /queueTableRefresh\(table\)/);
+  assert.match(hookSource, /pendingInvalidationsRef\.current\.add\(table\)/);
+  assert.match(hookSource, /window\.setTimeout/);
+  assert.match(hookSource, /INVALIDATION_DEBOUNCE_MS/);
+  assert.match(hookSource, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
+  assert.match(hookSource, /readDashboardSnapshot\(client, \{ signal: controller\.signal \}\)/);
+  assert.match(hookSource, /window\.setInterval\(\(\) => \{\s*void requestFullRefresh\(\);\s*\}, POLL_INTERVAL_MS\)/);
+  assert.match(hookSource, /requestSequenceRef/);
+  assert.match(hookSource, /controller\.abort\(\)/);
+  assert.match(hookSource, /tableControllersRef/);
+  assert.match(hookSource, /fullControllerRef/);
+  assert.match(hookSource, /dashboardFreshness/);
+  assert.match(transportSource, /Promise\.allSettled/);
+  assert.match(transportSource, /errors: Partial<Record<RawTableName, string>>/);
+  assert.match(dashboardSource, /Partial Agent State data/);
+  assert.match(dashboardSource, /tableHealthLabel/);
+  assert.match(dashboardSource, /Realtime · \$\{effectiveLiveState\}/);
+  assert.match(dashboardSource, /Data · \$\{freshness\}/);
+  assert.doesNotMatch(dashboardSource, /data-source.*baseStatus|baseStatus.*data-source/i);
 });
