@@ -1,19 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { normalizeSnapshot, type DashboardLiveState } from "@/lib/dashboard-model";
+import { normalizeSnapshot } from "@/lib/dashboard-model";
 import {
   DASHBOARD_TABLES,
   getDashboardSupabaseClient,
   readDashboardSnapshot,
-  readDashboardTable,
   subscribeToDashboardChanges,
 } from "@/lib/dashboard-supabase";
 import {
+  activityFromRealtimeChange,
+  applyRealtimeChangeToTableStates,
+  connectionActivity,
+  prependActivity,
+  reconciliationActivity,
+  realtimeRowKey,
+  replayRealtimeChanges,
+  type DashboardActivityItem,
+  type DashboardRealtimeChange,
+} from "@/lib/realtime-dashboard-state";
+import {
   applyPartialSnapshot,
-  beginTableRead,
   beginTableReads,
-  completeTableRead,
   createRequestIds,
   createTableReadStates,
   dashboardFreshness,
@@ -30,20 +38,22 @@ import {
 } from "@/lib/table-refresh-state";
 import type { DashboardSnapshot, RawTableName } from "@/types/dashboard";
 
-export const POLL_INTERVAL_MS = 30_000;
-export const INVALIDATION_DEBOUNCE_MS = 150;
+export const RECOVERY_POLL_INTERVAL_MS = 5_000;
 export const STALE_AFTER_MS = 75_000;
+
+export type DashboardConnectionState = "connecting" | "live" | "reconnecting" | "recovering";
+type ReconcileReason = "bootstrap" | "reconnect" | "recovery";
 
 export interface DashboardTablesState {
   tableStates: TableReadStates;
   snapshot: DashboardSnapshot | null;
-  connectionState: DashboardLiveState;
+  connectionState: DashboardConnectionState;
   freshness: DashboardFreshness;
   lastRefresh: Date | null;
   loading: boolean;
   refreshing: boolean;
   issueTables: RawTableName[];
-  requestFullRefresh: () => Promise<void>;
+  activities: DashboardActivityItem[];
 }
 
 function nextIdsFor(
@@ -55,70 +65,65 @@ function nextIdsFor(
   return next;
 }
 
+function changeKey(change: DashboardRealtimeChange): string | null {
+  return realtimeRowKey(
+    change.table,
+    change.eventType === "DELETE" ? change.oldRow ?? change.newRow : change.newRow ?? change.oldRow,
+  );
+}
+
 export function useDashboardTables(nowMs: number): DashboardTablesState {
   const [tableStates, setTableStates] = useState<TableReadStates>(() => createTableReadStates());
-  const [connectionState, setConnectionState] = useState<DashboardLiveState>("connecting");
+  const [connectionState, setConnectionState] = useState<DashboardConnectionState>("connecting");
+  const [activities, setActivities] = useState<DashboardActivityItem[]>([]);
   const requestSequenceRef = useRef<TableRequestIds>(createRequestIds());
   const fullControllerRef = useRef<AbortController | null>(null);
-  const tableControllersRef = useRef<Partial<Record<RawTableName, AbortController>>>({});
-  const pendingInvalidationsRef = useRef<Set<RawTableName>>(new Set());
-  const invalidationTimerRef = useRef<number | null>(null);
+  const reconcilingRef = useRef(false);
+  const bufferedChangesRef = useRef<DashboardRealtimeChange[]>([]);
+  const bootstrapStartedRef = useRef(false);
+  const bootstrappedRef = useRef(false);
+  const socketLiveRef = useRef(false);
 
-  const requestTableRefresh = useCallback(async (table: RawTableName) => {
-    const client = getDashboardSupabaseClient();
-    tableControllersRef.current[table]?.abort();
-    const controller = new AbortController();
-    tableControllersRef.current[table] = controller;
-
-    const requestIds = nextIdsFor(requestSequenceRef, [table]);
-    const requestId = requestIds[table];
-    setTableStates((current) => beginTableRead(current, table, requestId));
-
-    try {
-      const rows = await readDashboardTable(client, table, { signal: controller.signal });
-      if (controller.signal.aborted) return;
-      const successAt = new Date().toISOString();
-      setTableStates((current) => completeTableRead(current, table, requestId, rows, successAt));
-    } catch (caught) {
-      if (controller.signal.aborted) return;
-      const message = caught instanceof Error ? caught.message : `Dashboard read failed for ${table}`;
-      setTableStates((current) => failTableRead(current, table, requestId, message));
-    } finally {
-      if (tableControllersRef.current[table] === controller) {
-        delete tableControllersRef.current[table];
-      }
-    }
+  const appendActivity = useCallback((item: DashboardActivityItem) => {
+    setActivities((current) => prependActivity(current, item));
   }, []);
 
-  const requestFullRefresh = useCallback(async () => {
-    if (invalidationTimerRef.current !== null) {
-      window.clearTimeout(invalidationTimerRef.current);
-      invalidationTimerRef.current = null;
-    }
-    pendingInvalidationsRef.current.clear();
+  const requestFullRefresh = useCallback(async (reason: ReconcileReason): Promise<boolean> => {
     fullControllerRef.current?.abort();
-    for (const table of DASHBOARD_TABLES) {
-      tableControllersRef.current[table]?.abort();
-      delete tableControllersRef.current[table];
-    }
-
     const controller = new AbortController();
     fullControllerRef.current = controller;
+    reconcilingRef.current = true;
+
+    if (reason !== "bootstrap") setConnectionState("recovering");
     const requestIds = nextIdsFor(requestSequenceRef, DASHBOARD_TABLES);
     setTableStates((current) => beginTableReads(current, requestIds));
 
     try {
       const client = getDashboardSupabaseClient();
       const rawSnapshot = await readDashboardSnapshot(client, { signal: controller.signal });
-      if (controller.signal.aborted) return;
-      setTableStates((current) => applyPartialSnapshot(
-        current,
-        rawSnapshot,
-        requestIds,
-        rawSnapshot.refreshedAt,
+      if (controller.signal.aborted) return false;
+
+      const replay = bufferedChangesRef.current;
+      bufferedChangesRef.current = [];
+      setTableStates((current) => replayRealtimeChanges(
+        applyPartialSnapshot(current, rawSnapshot, requestIds, rawSnapshot.refreshedAt),
+        replay,
       ));
+      bootstrappedRef.current = true;
+
+      const complete = Object.keys(rawSnapshot.errors).length === 0;
+      if (complete && socketLiveRef.current) setConnectionState("live");
+      else setConnectionState(socketLiveRef.current ? "recovering" : "reconnecting");
+
+      appendActivity(reconciliationActivity(
+        rawSnapshot.refreshedAt,
+        complete
+          ? reason === "bootstrap" ? "Bootstrap snapshot converged" : "Agent State reconciled"
+          : "Agent State reconciliation is partial",
+      ));
+      return complete;
     } catch (caught) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return false;
       const message = caught instanceof Error ? caught.message : "Dashboard snapshot could not be loaded.";
       setTableStates((current) => {
         let next = current;
@@ -127,58 +132,95 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
         }
         return next;
       });
+      if (reason !== "bootstrap") setConnectionState(socketLiveRef.current ? "recovering" : "reconnecting");
+      return false;
     } finally {
-      if (fullControllerRef.current === controller) fullControllerRef.current = null;
+      if (fullControllerRef.current === controller) {
+        fullControllerRef.current = null;
+        reconcilingRef.current = false;
+      }
     }
-  }, []);
+  }, [appendActivity]);
 
-  const queueTableRefresh = useCallback((table: RawTableName) => {
-    pendingInvalidationsRef.current.add(table);
-    if (invalidationTimerRef.current !== null) return;
+  const applyLiveChange = useCallback((change: DashboardRealtimeChange) => {
+    appendActivity(activityFromRealtimeChange(change));
 
-    invalidationTimerRef.current = window.setTimeout(() => {
-      const pending = [...pendingInvalidationsRef.current];
-      pendingInvalidationsRef.current.clear();
-      invalidationTimerRef.current = null;
-      for (const pendingTable of pending) void requestTableRefresh(pendingTable);
-    }, INVALIDATION_DEBOUNCE_MS);
-  }, [requestTableRefresh]);
+    if (reconcilingRef.current || !bootstrappedRef.current) {
+      bufferedChangesRef.current.push(change);
+    }
+    if (!bootstrappedRef.current) return;
+
+    if (!changeKey(change)) {
+      setConnectionState("recovering");
+      if (!reconcilingRef.current) void requestFullRefresh("recovery");
+      return;
+    }
+
+    setTableStates((current) => applyRealtimeChangeToTableStates(current, change).states);
+  }, [appendActivity, requestFullRefresh]);
 
   useEffect(() => {
-    void requestFullRefresh();
     const client = getDashboardSupabaseClient();
     const unsubscribe = subscribeToDashboardChanges(client, {
-      onStatus: (status) => setConnectionState(status),
-      onInvalidate: (table) => {
+      onStatus: (status) => {
+        const observedAt = new Date().toISOString();
+        if (status === "connecting") {
+          if (!bootstrappedRef.current) setConnectionState("connecting");
+          return;
+        }
+        if (status === "reconnecting") {
+          socketLiveRef.current = false;
+          setConnectionState("reconnecting");
+          appendActivity(connectionActivity(observedAt, "Realtime reconnecting"));
+          return;
+        }
+
+        const wasLive = socketLiveRef.current;
+        socketLiveRef.current = true;
+        if (!bootstrapStartedRef.current) {
+          bootstrapStartedRef.current = true;
+          appendActivity(connectionActivity(observedAt, "Realtime subscribed; bootstrapping"));
+          void requestFullRefresh("bootstrap");
+          return;
+        }
+        if (!wasLive) {
+          setConnectionState("recovering");
+          appendActivity(connectionActivity(observedAt, "Realtime reconnected; reconciling"));
+          void requestFullRefresh("reconnect");
+          return;
+        }
         setConnectionState("live");
-        queueTableRefresh(table);
       },
+      onChange: applyLiveChange,
     });
-    const poll = window.setInterval(() => {
-      void requestFullRefresh();
-    }, POLL_INTERVAL_MS);
 
     return () => {
       unsubscribe();
-      window.clearInterval(poll);
-      if (invalidationTimerRef.current !== null) {
-        window.clearTimeout(invalidationTimerRef.current);
-        invalidationTimerRef.current = null;
-      }
-      pendingInvalidationsRef.current.clear();
+      socketLiveRef.current = false;
       fullControllerRef.current?.abort();
       fullControllerRef.current = null;
-      for (const controller of Object.values(tableControllersRef.current)) {
-        if (controller) controller.abort();
-      }
-      tableControllersRef.current = {};
+      reconcilingRef.current = false;
+      bufferedChangesRef.current = [];
     };
-  }, [queueTableRefresh, requestFullRefresh]);
+  }, [appendActivity, applyLiveChange, requestFullRefresh]);
+
+  useEffect(() => {
+    if (!bootstrappedRef.current) return;
+    if (connectionState !== "reconnecting" && connectionState !== "recovering") return;
+    const poll = window.setInterval(() => {
+      void requestFullRefresh("recovery");
+    }, RECOVERY_POLL_INTERVAL_MS);
+    return () => window.clearInterval(poll);
+  }, [connectionState, requestFullRefresh]);
 
   const anyData = hasAnyTableData(tableStates);
   const anyLoading = hasAnyTableLoading(tableStates);
   const successAt = latestTableSuccessAt(tableStates);
-  const freshness = dashboardFreshness(tableStates, nowMs, STALE_AFTER_MS);
+  const issueTables = tableIssues(tableStates);
+  const fallbackFreshness = dashboardFreshness(tableStates, nowMs, STALE_AFTER_MS);
+  const freshness: DashboardFreshness = connectionState === "live" && issueTables.length === 0
+    ? "fresh"
+    : fallbackFreshness;
   const snapshot = useMemo(() => {
     if (!anyData) return null;
     return normalizeSnapshot({
@@ -193,9 +235,9 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
     connectionState,
     freshness,
     lastRefresh: successAt ? new Date(successAt) : null,
-    loading: !anyData && freshness === "loading",
+    loading: !anyData && fallbackFreshness === "loading",
     refreshing: anyData && anyLoading,
-    issueTables: tableIssues(tableStates),
-    requestFullRefresh,
+    issueTables,
+    activities,
   };
 }
