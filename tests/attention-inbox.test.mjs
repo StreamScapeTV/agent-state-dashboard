@@ -181,12 +181,33 @@ test("selected coordination recipient is respected without mutating actor state"
   assert.equal(actor.baseStatus, "working");
 });
 
-test("UI applies project and identity filters locally and keeps source staleness separate from agent age", () => {
+test("project and identity filters produce the bounded queue input", () => {
+  const rows = [
+    row("Agent 1", { projectKey: "alpha" }),
+    row("Codex 2", { projectKey: "alpha", identityKind: "codex" }),
+    row("Agent 3", { projectKey: "beta" }),
+  ];
+
+  assert.deepEqual(
+    inbox.filterAttentionRows(rows, "alpha", "all").map((item) => item.identity),
+    ["Agent 1", "Codex 2"],
+  );
+  assert.deepEqual(
+    inbox.filterAttentionRows(rows, "all", "codex").map((item) => item.identity),
+    ["Codex 2"],
+  );
+  assert.deepEqual(
+    inbox.filterAttentionRows(rows, "beta", "agent").map((item) => item.identity),
+    ["Agent 3"],
+  );
+  assert.deepEqual(inbox.filterAttentionRows(rows, "missing", "all"), []);
+});
+
+test("UI keeps source staleness separate from agent age and links to existing detail inspection", () => {
   const source = readFileSync(new URL("../components/AttentionInbox.tsx", import.meta.url), "utf8");
   const dashboardSource = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
 
-  assert.match(source, /projectFilter === "all" \|\| row\.projectKey === projectFilter/);
-  assert.match(source, /identityFilter === "all" \|\| row\.identityKind === identityFilter/);
+  assert.match(source, /filterAttentionRows\(rows, projectFilter, identityFilter\)/);
   assert.match(source, /Current-state triage only\. Assignment age is informational and never changes authoritative status\./);
   assert.match(source, /buildAttentionQueue\(filteredRows, recipient\)/);
   assert.match(source, /onClick=\{\(\) => onView\(row\.key\)\}/);
