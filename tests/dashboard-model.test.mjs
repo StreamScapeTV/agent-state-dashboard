@@ -95,8 +95,8 @@ test("blocked is an overlay and can coexist with a returned chat", () => {
   const [row] = model.buildAgentRows(snapshot, Date.parse("2026-08-12T00:10:00Z"));
   assert.equal(row.baseStatus, "returned");
   assert.equal(row.blocked, true);
-  assert.equal(row.blockerCues[0].reason, "blocked");
-  assert.equal(row.blockerCues[1].reason, "CI credential");
+  assert.equal(row.blockerCues[0].reason, "CI credential");
+  assert.equal(row.blockerCues.length, 1);
   assert.equal(model.statusLabel(row), "Blocked · returned");
   assert.equal(model.attentionRank(row), 0);
 });
@@ -149,6 +149,8 @@ test("boolean-only blocker stays blocked without fabricating a reason", () => {
   const currentWork = work({ blocked: true });
   assert.equal(model.isBlocked({}, currentWork), true);
   assert.deepEqual(model.extractBlockerCues({}, currentWork), []);
+  assert.deepEqual(model.extractBlockerCues({ status: "blocked" }, []), []);
+  assert.deepEqual(model.extractBlockerCues({ phase: "waiting" }, []), []);
 });
 
 test("live event policy separates fallback freshness from Realtime connection state", () => {
