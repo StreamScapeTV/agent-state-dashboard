@@ -156,6 +156,15 @@ test("buffered bootstrap/reconciliation events replay in observed order", () => 
   assert.deepEqual(replayed.current_coordination.rows, []);
 });
 
+test("buffered live update wins over an older reconciliation snapshot", () => {
+  const sample = samples.current_agents;
+  const staleSnapshot = states({ current_agents: tableState([sample.old]) });
+  const converged = realtime.replayRealtimeChanges(staleSnapshot, [
+    change("current_agents", "UPDATE", sample.next, sample.old),
+  ]);
+  assert.deepEqual(converged.current_agents.rows, [sample.next]);
+});
+
 test("activity feed is bounded, deduplicated and in-memory data only", () => {
   let feed = [];
   for (let index = 0; index < 20; index += 1) {
