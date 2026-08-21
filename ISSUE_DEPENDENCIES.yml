@@ -70,3 +70,6 @@ issues:
       - 98
   104:
     blocked_by: []
+  106:
+    blocked_by:
+      - 98
