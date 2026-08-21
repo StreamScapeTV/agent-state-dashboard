@@ -202,7 +202,7 @@ test("latest success timestamp is independent from table error state", () => {
   assert.equal(state.hasAnyTableLoading(current), false);
 });
 
-test("client source contract is Realtime-first with subscription-before-bootstrap and recovery-only polling", () => {
+test("client source contract is Realtime-first with subscription-aware bootstrap and recovery-only polling", () => {
   const hookSource = readFileSync(new URL("../lib/use-dashboard-tables.ts", import.meta.url), "utf8");
   const dashboardSource = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
   const transportSource = readFileSync(new URL("../lib/dashboard-supabase.ts", import.meta.url), "utf8");
@@ -214,14 +214,18 @@ test("client source contract is Realtime-first with subscription-before-bootstra
   assert.match(hookSource, /const unsubscribe = subscribeToDashboardChanges\(client, \{/);
   assert.match(hookSource, /onChange: applyLiveChange/);
   assert.match(hookSource, /Realtime subscribed; bootstrapping/);
-  assert.match(hookSource, /void requestFullRefresh\("bootstrap"\)/);
+  assert.match(hookSource, /startBootstrap\(true\)/);
+  assert.match(hookSource, /BOOTSTRAP_SUBSCRIBE_GRACE_MS = 750/);
+  assert.match(hookSource, /window\.setTimeout\(\(\) => startBootstrap\(false\), BOOTSTRAP_SUBSCRIBE_GRACE_MS\)/);
+  assert.match(hookSource, /Realtime joined after bootstrap start; reconciling/);
   assert.match(hookSource, /bufferedChangesRef\.current\.push\(change\)/);
   assert.match(hookSource, /replayRealtimeChanges/);
   assert.match(hookSource, /applyRealtimeChangeToTableStates\(current, change\)/);
   assert.doesNotMatch(hookSource, /readDashboardTable\(/);
-  assert.doesNotMatch(hookSource, /POLL_INTERVAL_MS|INVALIDATION_DEBOUNCE_MS|pendingInvalidationsRef|queueTableRefresh/);
+  assert.doesNotMatch(hookSource, /export const POLL_INTERVAL_MS\b|INVALIDATION_DEBOUNCE_MS|pendingInvalidationsRef|queueTableRefresh/);
   assert.match(hookSource, /connectionState !== "reconnecting" && connectionState !== "recovering"/);
-  assert.match(hookSource, /window\.setInterval\(\(\) => \{\s*void requestFullRefresh\("recovery"\);\s*\}, RECOVERY_POLL_INTERVAL_MS\)/);
+  assert.match(hookSource, /if \(!reconcilingRef\.current\) void requestFullRefresh\("recovery"\)/);
+  assert.match(hookSource, /RECOVERY_POLL_INTERVAL_MS = 5_000/);
   assert.match(hookSource, /Realtime reconnected; reconciling/);
   assert.match(hookSource, /void requestFullRefresh\("reconnect"\)/);
   assert.match(hookSource, /fullControllerRef\.current\?\.abort\(\)/);
