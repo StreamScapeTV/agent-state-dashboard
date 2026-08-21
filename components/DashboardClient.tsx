@@ -49,6 +49,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AttentionInbox } from "@/components/AttentionInbox";
 import {
   attentionRank,
   buildAgentRows,
@@ -693,6 +694,13 @@ export function DashboardClient() {
         )}
       </Box>
       <ProjectCards projects={projects} selected={projectFilter} onSelect={setProjectFilter} />
+      <AttentionInbox
+        rows={rows}
+        projectFilter={projectFilter}
+        identityFilter={identityFilter}
+        nowMs={nowMs}
+        onView={setSelectedAgentKey}
+      />
       <Paper variant="outlined">
         <Stack direction={{ xs: "column", lg: "row" }} sx={{ gap: 1, p: 1 }}>
           <TextField
