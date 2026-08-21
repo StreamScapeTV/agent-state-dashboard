@@ -20,6 +20,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useMemo, useState } from "react";
+import { WorkAssignmentBoard } from "@/components/WorkAssignmentBoard";
 import { buildAttentionQueue, filterAttentionRows } from "@/lib/attention-inbox";
 import { formatDuration, statusLabel } from "@/lib/dashboard-model";
 import type { AgentViewRow, IdentityKind } from "@/types/dashboard";
@@ -81,6 +82,8 @@ export function AttentionInbox({
     () => buildAttentionQueue(filteredRows, recipient),
     [filteredRows, recipient],
   );
+
+  const currentWork = useMemo(() => rows.flatMap((row) => row.work), [rows]);
 
   return (
     <Paper variant="outlined" sx={{ mb: 2 }}>
@@ -177,6 +180,8 @@ export function AttentionInbox({
           </Table>
         </TableContainer>
       )}
+
+      <WorkAssignmentBoard work={currentWork} agents={rows} onView={onView} />
     </Paper>
   );
 }
