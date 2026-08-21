@@ -114,7 +114,7 @@ export function CoordinationBoard({ coordination, agents, onView }: Coordination
             <Chip size="small" variant="outlined" label={`${counts.recipients} recipients`} />
           </Stack>
           <Typography variant="caption" color="text.secondary">
-            Current routing cells only. Resolved/deleted coordination disappears on refresh; no past routing or acknowledgement ledger is retained.
+            Current routing cells only. Resolved/deleted coordination disappears on refresh; no past routing or local read-state ledger is retained.
           </Typography>
         </Box>
       </Stack>
