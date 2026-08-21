@@ -219,7 +219,6 @@ test("resource strings stay literal and model contains no pattern-expansion or a
 
 test("UI exposes exact counts and guidance without takeover/release controls or persistence", () => {
   const source = readFileSync(new URL("../components/ResourcesCapacityBoard.tsx", import.meta.url), "utf8");
-  const mountSource = readFileSync(new URL("../components/AttentionInbox.tsx", import.meta.url), "utf8");
 
   assert.match(source, /Resources &amp; Capacity/);
   assert.match(source, /Exact current resource keys are authoritative\. Pattern expansion and age expiry are not inferred/);
@@ -229,5 +228,4 @@ test("UI exposes exact counts and guidance without takeover/release controls or 
   assert.match(source, /Capacity attention/);
   assert.match(source, /onClick=\{\(\) => onView\(item\.owner\.key\)\}/);
   assert.doesNotMatch(source, /takeoverResource|releaseResource|claimResource|set_agent_resources|localStorage|sessionStorage/i);
-  assert.match(mountSource, /<ResourcesCapacityBoard rows=\{rows\} onView=\{onView\} \/>/);
 });

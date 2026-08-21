@@ -165,24 +165,36 @@ test("buffered live update wins over an older reconciliation snapshot", () => {
   assert.deepEqual(converged.current_agents.rows, [sample.next]);
 });
 
-test("activity feed is bounded, deduplicated and in-memory data only", () => {
+test("activity feed is bounded, deduplicated and carries derived session context", () => {
   let feed = [];
-  for (let index = 0; index < 20; index += 1) {
+  for (let index = 0; index < realtime.ACTIVITY_LIMIT + 8; index += 1) {
     feed = realtime.prependActivity(feed, {
       id: `event-${index}`,
-      observedAt: `2026-08-21T09:30:${String(index).padStart(2, "0")}Z`,
+      observedAt: `2026-08-21T09:${String(Math.floor(index / 60) + 30).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}Z`,
       kind: "change",
       summary: `event ${index}`,
     });
   }
   assert.equal(feed.length, realtime.ACTIVITY_LIMIT);
-  assert.equal(feed[0].id, "event-19");
+  assert.equal(feed[0].id, `event-${realtime.ACTIVITY_LIMIT + 7}`);
 
   const item = realtime.activityFromRealtimeChange(
     change("current_agents", "UPDATE", samples.current_agents.next, samples.current_agents.old),
   );
   assert.equal(item.kind, "change");
   assert.equal(item.table, "current_agents");
+  assert.equal(item.projectKey, "alpha");
+  assert.deepEqual(item.identities, ["Agent 2"]);
+  assert.equal(item.rowKey, '["alpha","Agent 2"]');
+  assert.equal(Object.hasOwn(item, "newRow"), false);
+  assert.equal(Object.hasOwn(item, "oldRow"), false);
   assert.match(item.summary, /agents/);
+
+  const coordinationItem = realtime.activityFromRealtimeChange(
+    change("current_coordination", "UPDATE", samples.current_coordination.next, samples.current_coordination.old),
+  );
+  assert.equal(coordinationItem.projectKey, "alpha");
+  assert.deepEqual(coordinationItem.identities, ["Agent 2", "Orchestrator"]);
+
   assert.doesNotMatch(readFileSync(new URL("../lib/realtime-dashboard-state.ts", import.meta.url), "utf8"), /localStorage|sessionStorage|indexedDB/i);
 });

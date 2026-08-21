@@ -211,7 +211,6 @@ test("counts are canonical by project plus participant identity", () => {
 
 test("UI defaults to Orchestrator inbox, provides raw JSON fallback and remains read-only/current-state only", () => {
   const source = readFileSync(new URL("../components/CoordinationBoard.tsx", import.meta.url), "utf8");
-  const mountSource = readFileSync(new URL("../components/AttentionInbox.tsx", import.meta.url), "utf8");
 
   assert.match(source, /useState<CoordinationDirection>\("inbox"\)/);
   assert.match(source, /useState\("Orchestrator"\)/);
@@ -223,5 +222,4 @@ test("UI defaults to Orchestrator inbox, provides raw JSON fallback and remains 
   assert.match(source, /onClick=\{\(\) => onView\(recipientKey\)\}/);
   assert.doesNotMatch(source, /resolveCoordination|setCoordination|set_work|set_agent|Reply|Reassign|Acknowledge|localStorage|sessionStorage/i);
   assert.doesNotMatch(source, /history/i);
-  assert.match(mountSource, /<CoordinationBoard agents=\{rows\} onView=\{onView\} \/>/);
 });

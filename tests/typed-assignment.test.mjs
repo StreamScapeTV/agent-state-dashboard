@@ -149,16 +149,18 @@ test("typed assignment works without compatibility prompt and legacy rows still 
   assert.equal(model.deriveBaseStatus(legacy, []), "returned");
 });
 
-test("client source makes typed assignment primary while retaining compatibility diagnostics and local search", () => {
+test("progressive UI keeps typed assignment primary, compatibility diagnostics and searchable work context", () => {
   const source = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
+  const overviewSource = readFileSync(new URL("../components/ProjectOverview.tsx", import.meta.url), "utf8");
+  const workSource = readFileSync(new URL("../components/WorkAssignmentBoard.tsx", import.meta.url), "utf8");
 
   assert.match(source, /<LongText label="Current assignment" value=\{row\.assignment\?\.instructions \?\? null\} \/>/);
   assert.match(source, /Assignment context/);
+  assert.match(source, /<JsonPanel value=\{row\.assignment\.context\} \/>/);
   assert.match(source, /<LongText label="Compatibility prompt" value=\{row\.prompt\} \/>/);
   assert.match(source, /Assigned: \{displayTime\(row\.assignedAt\)\}/);
-  assert.match(source, /shortTime\(row\.assignedAt\)/);
-  assert.match(source, /Date\.parse\(a\.assignedAt \?\? ""\)/);
-  assert.match(source, /row\.assignment\?\.instructions \?\? ""/);
-  assert.match(source, /pretty\(row\.assignment\.context\)/);
-  assert.doesNotMatch(source, /assignmentHistory|runId|sessionId/);
+  assert.match(overviewSource, /const instructions = row\.assignment\?\.instructions\.trim\(\)/);
+  assert.match(overviewSource, /return instructions\.split/);
+  assert.match(workSource, /Search work key, assignment, state, next action…/);
+  assert.doesNotMatch(`${source}\n${overviewSource}\n${workSource}`, /assignmentHistory|runId|sessionId/);
 });

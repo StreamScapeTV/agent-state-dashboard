@@ -58,7 +58,8 @@ test("healthy socket operation has no always-on snapshot poll and recovery recon
 test("raw explorer remains an independently selected read while normal live operation is socket-driven", () => {
   assert.match(dashboardSource, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
   assert.match(dashboardSource, /Raw tables/);
-  assert.match(dashboardSource, /Live activity/);
+  assert.match(dashboardSource, /Recent live activity/);
+  assert.match(dashboardSource, /Live details/);
   assert.doesNotMatch(dashboardSource, /new EventSource\(|["']\/events["']|\/api\/tables/);
   assert.doesNotMatch(hookSource, /new EventSource\(|["']\/events["']|\/api\/tables/);
 });

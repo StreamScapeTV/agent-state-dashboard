@@ -230,9 +230,10 @@ test("client source contract is Realtime-first with subscription-aware bootstrap
   assert.match(hookSource, /void requestFullRefresh\("reconnect"\)/);
   assert.match(hookSource, /fullControllerRef\.current\?\.abort\(\)/);
   assert.match(transportSource, /Promise\.allSettled/);
-  assert.match(realtimeSource, /ACTIVITY_LIMIT = 12/);
+  assert.match(realtimeSource, /ACTIVITY_LIMIT = 50/);
   assert.doesNotMatch(realtimeSource, /localStorage|sessionStorage|indexedDB/i);
-  assert.match(dashboardSource, /Live activity/);
+  assert.match(dashboardSource, /Logs \/ Activity/);
+  assert.doesNotMatch(dashboardSource, /activities\.slice\(0, 8\)/);
   assert.doesNotMatch(dashboardSource, /Refresh all/);
   assert.match(dashboardSource, /Partial Agent State data/);
   assert.match(dashboardSource, /tableHealthLabel/);

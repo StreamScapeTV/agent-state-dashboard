@@ -1,6 +1,8 @@
 import type {
   AgentBaseStatus,
+  AgentStatusFilter,
   AgentViewRow,
+  BlockerCue,
   CurrentAgentRecord,
   CurrentAssignment,
   CurrentCoordinationRecord,
@@ -30,6 +32,9 @@ const BLOCKER_KEYS = new Set([
   "waiting_on",
   "waiting_for",
 ]);
+
+const BLOCKER_DETAIL_KEYS = ["reason", "message", "summary", "title", "status", "phase"];
+const MAX_BLOCKER_CUES = 3;
 
 export type DashboardLiveState = "connecting" | "live" | "reconnecting" | "stale";
 export type DashboardLiveEvent = "open" | "error" | "refresh" | "invalidate" | "status";
@@ -144,8 +149,6 @@ function parseAgent(value: unknown): CurrentAgentRecord | null {
   return {
     projectKey,
     identity,
-    // Assignment/prompt/response are owner-visible authoritative text. Preserve
-    // their bytes instead of applying identifier/timestamp whitespace normalization.
     assignment: parseAssignment(valueFrom(value, ["assignment"])),
     assignmentAssignedAt: stringFrom(value, ["assignment_assigned_at", "assignmentAssignedAt"]),
     prompt: rawStringFrom(value, ["prompt", "current_prompt", "currentPrompt"]),
@@ -215,7 +218,7 @@ function textSignalsBlocked(value: unknown, depth = 0): boolean {
     }
     if ((normalizedKey === "status" || normalizedKey === "phase") && typeof item === "string") {
       const normalizedValue = item.trim().toLowerCase();
-      if (/^blocked(?:$|[:_\-\s])/.test(normalizedValue) || normalizedValue === "waiting") {
+      if (/^blocked(?:$|[:_\-\s])/.test(normalizedValue) || /^waiting(?:$|[:_\-\s])/.test(normalizedValue)) {
         return true;
       }
     }
@@ -242,6 +245,71 @@ function firstString(value: JsonValue, keys: string[], depth = 0): string | null
     if (found) return found;
   }
   return null;
+}
+
+function collectBlockerReasons(value: JsonValue, output: string[], depth = 0): void {
+  if (depth > 5 || value === null || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const item of value) collectBlockerReasons(item, output, depth + 1);
+    return;
+  }
+
+  for (const [key, item] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase();
+    if (BLOCKER_KEYS.has(normalizedKey)) {
+      if (typeof item === "string" && item.trim().length > 0) {
+        output.push(item.trim());
+      } else if (item !== null && typeof item === "object") {
+        const detail = firstString(item, BLOCKER_DETAIL_KEYS);
+        if (detail) output.push(detail);
+      }
+    }
+    if ((normalizedKey === "status" || normalizedKey === "phase") && typeof item === "string") {
+      const normalizedValue = item.trim().toLowerCase();
+      const blockedStatus = /^blocked(?:$|[:_\-\s])/.test(normalizedValue);
+      const waitingStatus = /^waiting(?:$|[:_\-\s])/.test(normalizedValue);
+      if ((blockedStatus || waitingStatus) && normalizedValue !== "blocked" && normalizedValue !== "waiting") {
+        output.push(item.trim());
+      }
+    }
+    collectBlockerReasons(item, output, depth + 1);
+  }
+}
+
+function blockerReasons(value: JsonValue): string[] {
+  const candidates: string[] = [];
+  collectBlockerReasons(value, candidates);
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = candidate.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function extractBlockerCues(agentState: JsonValue, work: CurrentWorkRecord[]): BlockerCue[] {
+  const cues: BlockerCue[] = [];
+  const seen = new Set<string>();
+
+  const append = (state: JsonValue, source: "actor" | "work", workKey: string | null) => {
+    const summary = firstString(state, ["objective", "summary", "title", "status", "phase"]);
+    const nextAction = firstString(state, ["next_action", "nextAction", "next", "checkpoint"]);
+    for (const reason of blockerReasons(state)) {
+      const key = `${source}:${workKey ?? ""}:${reason.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      cues.push({ reason, source, workKey, summary, nextAction });
+      if (cues.length >= MAX_BLOCKER_CUES) return;
+    }
+  };
+
+  append(agentState, "actor", null);
+  for (const item of work) {
+    if (cues.length >= MAX_BLOCKER_CUES) break;
+    append(item.state, "work", item.workKey);
+  }
+  return cues;
 }
 
 function addIndexed<T>(index: IdentityIndex<T>, projectKey: string, identity: string, value: T) {
@@ -288,8 +356,6 @@ export function normalizeSnapshot(input: unknown, nowIso = new Date().toISOStrin
 export function currentAssignedAt(
   agent: Pick<CurrentAgentRecord, "assignmentAssignedAt" | "promptAssignedAt">,
 ): string | null {
-  // Typed assignment observability is authoritative whenever it is present.
-  // Compatibility timing is only a fallback for rows that genuinely predate it.
   return agent.assignmentAssignedAt ?? agent.promptAssignedAt;
 }
 
@@ -304,10 +370,6 @@ export function deriveBaseStatus(
     if (returnedAt !== null && returnedAt >= assignedAt) return "returned";
     return "working";
   }
-
-  // Rows that predate assignment observability deliberately keep NULL timestamps.
-  // Do not infer an active assignment from retained text; only current work can
-  // make such a row operationally active until a real future assignment is stamped.
   if (work.length > 0) return "working";
   return "idle";
 }
@@ -370,6 +432,7 @@ export function buildAgentRows(snapshot: DashboardSnapshot, nowMs = Date.now()):
     const assignedAt = currentAssignedAt(agent);
     const baseStatus = deriveBaseStatus(agent, work);
     const blocked = isBlocked(agent.state, work);
+    const blockerCues = extractBlockerCues(agent.state, work);
     const workSummary =
       work.map((item) => firstString(item.state, ["objective", "status", "summary", "title"])).find(Boolean) ??
       firstString(agent.state, ["objective", "status", "summary", "checkpoint"]) ??
@@ -390,6 +453,7 @@ export function buildAgentRows(snapshot: DashboardSnapshot, nowMs = Date.now()):
       assignedAt,
       baseStatus,
       blocked,
+      blockerCues,
       durationMs: durationMs(assignedAt, agent.lastReturnedAt, baseStatus, nowMs),
       work,
       resources,
@@ -406,6 +470,17 @@ export function refreshAgentDurations(rows: AgentViewRow[], nowMs = Date.now()):
     const nextDuration = durationMs(row.assignedAt, row.lastReturnedAt, row.baseStatus, nowMs);
     return nextDuration === row.durationMs ? row : { ...row, durationMs: nextDuration };
   });
+}
+
+export function filterProjectRows(
+  rows: AgentViewRow[],
+  projectKey: string,
+  status: AgentStatusFilter = "all",
+): AgentViewRow[] {
+  return rows.filter((row) =>
+    row.projectKey === projectKey
+    && (status === "all" || (status === "blocked" ? row.blocked : row.baseStatus === status)),
+  );
 }
 
 export function buildProjectSummaries(snapshot: DashboardSnapshot, rows: AgentViewRow[]): ProjectSummary[] {
