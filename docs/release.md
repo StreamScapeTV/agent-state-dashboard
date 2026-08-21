@@ -4,20 +4,60 @@ This repository publishes producer artifacts only. Flux #288 owns the live clust
 
 ## Release line and identity
 
-`0.1.0` is an immutable historical release identity. Do not republish it, move its tag, overwrite its published artifact references, or redefine it to represent the pure-NGINX architecture.
+The first real public dashboard release is **`1.0.0`**. The owner-created human Git tag `1.0.0` resolves exactly to:
 
-The next pure-NGINX release authority is **`0.1.1`**.
+```text
+9051fc35810b11a9697e09e7b53d48c006c7f07b
+```
 
-Before creating the `0.1.1` tag, the separately owned release/version change must make these values match exactly:
+The owner confirmed that the automatic tag-triggered producer publication completed. The published product identities are:
 
-- Git tag: `0.1.1`
-- `package.json` `version`: `0.1.1`
-- `charts/agent-state-dashboard/Chart.yaml` `version`: `0.1.1`
-- `charts/agent-state-dashboard/Chart.yaml` `appVersion`: `0.1.1`
+```text
+image: ghcr.io/streamscapetv/agent-state-dashboard:1.0.0
+chart: oci://ghcr.io/streamscapetv/helm-charts/agent-state-dashboard:1.0.0
+packaged chart version: 1.0.0
+packaged chart appVersion: 1.0.0
+```
 
-Until that version-finalization change lands, the checked-in package/chart may correctly remain at historical `0.1.0`. Documentation changes must not perform the version bump.
+Flux #288 may consume chart version `1.0.0`; this producer publication does not by itself prove live cluster deployment.
 
-For later releases, use the same rule with one canonical stable SemVer value across all four authorities. Never use `latest` as release or deployment authority.
+Historical `0.1.0` and `0.1.2` tags are immutable pre-1.0 identities. Never republish, move, recreate, replay, or redefine them. Published `1.0.0` is likewise immutable.
+
+For future releases, a human selects the next appropriate fresh SemVer tag from a consumable `main` revision. The **human Git tag is the canonical producer release version**. There is no release prerequisite requiring a preparatory source commit that makes all of these values identical:
+
+- `package.json` `version`;
+- source `charts/agent-state-dashboard/Chart.yaml` `version`;
+- source `charts/agent-state-dashboard/Chart.yaml` `appVersion`;
+- the Git tag.
+
+Central projects the immutable product tag into the published image tag and packaged Helm `version` / `appVersion`. Checked-in package/chart versions can remain build/source metadata; they are not independent release selectors. Never use `latest` as release or deployment authority.
+
+## Normal tag-driven release flow
+
+`.github/workflows/release.yml` is the sole normal producer release entrypoint:
+
+1. merge a consumable dashboard revision to `main`;
+2. a human creates and pushes a fresh SemVer tag;
+3. the tag push automatically starts `.github/workflows/release.yml`;
+4. the caller invokes `StreamScapeTV/ci-workflows/.github/workflows/reusable-public-native-image-chart.yml@main`;
+5. Central revalidates the exact immutable tag/source relationship before privileged publication;
+6. standard GitHub-hosted Linux publishes the native `linux/amd64` image and OCI Helm chart to GHCR;
+7. Central drops publication credentials and anonymously reads back both remote OCI manifests before it can report success;
+8. Flux later selects the published chart version and separately owns deployment.
+
+The repository caller grants only:
+
+```yaml
+permissions:
+  contents: read
+  packages: write
+```
+
+It supplies bounded image/chart names and build/chart paths only. It does not pass private registry credentials, a release execution-backend selector, concrete runner labels, cluster credentials, Flux inputs, or product-side deployment policy.
+
+The caller intentionally uses Central `@main`. A resolved Central implementation SHA may be recorded as supplementary run evidence if the successful run exposes it, but it is not the product release identity and operators do not supply a Central SHA to choose a release implementation.
+
+The release workflow publishes no `latest` authority, performs no Kubernetes deployment, and the normal successful path retains zero routine GitHub Actions artifacts.
 
 ## Pure-NGINX runtime evidence
 
@@ -32,10 +72,11 @@ The release candidate must prove the architecture that is actually shipped:
 - Realtime is exposed only through `/supabase/realtime/v1/websocket`;
 - NGINX injects `SUPABASE_SECRET_KEY` upstream and the real Supabase URL/key never enters generated static assets or browser-visible responses.
 
-Record exact-source pre-publication evidence for the source revision the tag will name. A release packet may use the following bounded fields when the corresponding checks apply:
+Record exact-source pre-publication evidence for the source revision the tag will name. A release packet may use the following bounded fields when the corresponding checks actually ran:
 
 ```text
 source_sha: <40-character commit SHA>
+release_tag: <fresh SemVer tag>
 npm_ci: success
 npm_test: success
 npm_typecheck: success
@@ -50,7 +91,7 @@ browser_secret_scan: success
 image_target_platform: linux/amd64
 ```
 
-Do not record a success value that has not been produced for the exact source SHA. Documentation, source validation, image publication, Helm publication, cluster rollout, and live access are separate proofs.
+Do not record a success value that was not produced for the exact source SHA. Documentation, source validation, image publication, Helm publication, cluster rollout, and live access are separate proofs.
 
 ## Image platform authority
 
@@ -60,60 +101,56 @@ The required producer image target for the current Debian/K3s environment is:
 linux/amd64
 ```
 
-A multi-architecture image is optional future capability, not a prerequisite for `0.1.1`. Do not make `linux/arm64`, a multi-platform manifest list, or any other unused architecture a release gate merely because a reusable publisher is capable of producing it.
+A multi-architecture image is optional future capability, not a release gate. Do not make `linux/arm64`, a multi-platform manifest list, or another unused architecture mandatory merely because a reusable publisher could support it.
 
-The release evidence handed to Flux must identify the immutable remote image digest that corresponds to the `linux/amd64` artifact actually selected for deployment. If a central capability also reports a platform config digest or an image index, retain that as supplementary evidence only when it is part of the exact successful run; it does not change the product's required platform.
+The strongest Flux handoff includes the immutable remote image digest corresponding to the released `linux/amd64` identity. If a successful Central run also reports a platform config digest or an image index, that may be retained as supplementary evidence; it does not change the required product platform.
 
-## Repository-owned release workflow
+## Immutable publication and remote read-back
 
-`.github/workflows/release.yml` is the final producer release entrypoint. It is repository-owned and should remain thin: product-specific code supplies the bounded image/chart names, chart path, Dockerfile/build context, release identity, and named registry credentials, while reviewed generic central CI/release capabilities implement reusable publication mechanics.
-
-The product repository must not embed reusable runner labels, container-engine/storage policy, cluster credentials, Flux operations, signing workarounds, or deployment logic in the release caller. Immutable central revisions may be pinned as implementation authority, but the producer contract is expressed in product terms rather than by copying central runner/platform internals into this repository.
-
-Issue #7 owns final release/package reconciliation before `0.1.1` is tagged. If the currently pinned reusable publisher encodes assumptions broader than the product requirement—such as mandatory multi-architecture publication—#7 must select/configure the appropriate generic central capability without changing the product requirement to match that implementation detail.
-
-The release workflow must publish no `latest` authority, retain zero routine Actions artifacts, and perform no Kubernetes deployment.
-
-## Immutable publication and read-back
-
-Expected registry identities remain:
+Normal public registry identities are:
 
 ```text
-image: git.faruqi.dev/mimranfaruqi/agent-state-dashboard:<version>
-chart: oci://git.faruqi.dev/mimranfaruqi/helm-charts/agent-state-dashboard
+image: ghcr.io/streamscapetv/agent-state-dashboard:<tag>
+chart: oci://ghcr.io/streamscapetv/helm-charts/agent-state-dashboard:<tag>
 ```
 
-After the exact-tag producer workflow succeeds, record the bounded read-back evidence from that same run:
+Central's successful public release path is fail-closed around remote read-back: after publication credentials are removed, the image and chart manifests are fetched anonymously and verified before success. The image read-back verifies the expected Linux/amd64 identity; the chart read-back records the OCI manifest identity.
+
+When the successful run exposes the values, retain a bounded handoff packet such as:
 
 ```text
-release_workflow_run: <GitHub Actions run URL or ID>
-central_capability_sha: <reviewed immutable ci-workflows commit SHA or SHAs>
+release_tag: <canonical human Git tag>
 source_sha: <verified tagged commit>
-version: <canonical SemVer>
-image_reference: <immutable versioned image reference>
+caller_workflow: StreamScapeTV/agent-state-dashboard/.github/workflows/release.yml
+central_workflow: StreamScapeTV/ci-workflows/.github/workflows/reusable-public-native-image-chart.yml@main
+release_workflow_run: <GitHub Actions run URL or ID when known>
+central_resolved_sha: <optional supplementary implementation SHA when emitted>
+image_reference: ghcr.io/streamscapetv/agent-state-dashboard:<tag>
 image_platform: linux/amd64
-image_digest: sha256:<verified remote digest for the released image identity>
-chart_reference: <OCI chart repository>
-chart_version: <canonical SemVer>
-chart_digest: sha256:<verified remote OCI chart manifest digest>
-chart_package_sha256: <verified packaged chart SHA-256 when provided>
+image_digest: sha256:<verified remote digest when available>
+chart_reference: oci://ghcr.io/streamscapetv/helm-charts/agent-state-dashboard:<tag>
+chart_version: <tag>
+chart_digest: sha256:<verified remote OCI manifest digest when available>
+chart_package_sha256: <optional packaged chart checksum when emitted>
 read_back: success
 actions_artifacts: zero
 deployment_performed: false
 ```
 
-A local image ID, build cache identifier, chart package checksum, or workflow success alone is not a substitute for the verified remote OCI identities. A chart package checksum is supplementary; the remote OCI chart manifest digest remains the chart handoff authority.
+A local image ID, build cache identifier, chart package checksum, or workflow success alone is not a substitute for verified remote OCI identity. A chart package checksum is supplementary; the remote OCI chart manifest digest is the stronger published-chart identity.
+
+Never invent a missing run ID or digest. For the `1.0.0` reconciliation, the connected GitHub tool could not enumerate the tag-push run without a known run ID. Therefore repository issue evidence records the exact tag/source and owner-confirmed completed publication, together with the reviewed Central contract that requires GitHub-hosted execution and anonymous image/chart read-back for success, but it does not fabricate unavailable digest/run fields.
 
 Never place registry credentials, Supabase values, rendered secret-bearing NGINX configuration, auth files, environment dumps, cluster credentials, or unrestricted logs into release evidence.
 
 ## Flux handoff
 
-Do not edit or reconcile the Flux cluster from this repository. Hand off only producer facts:
+Do not edit or reconcile the Flux cluster from this repository. Hand off only producer facts that are actually known:
 
 - exact producer source SHA;
-- canonical release version;
-- immutable `linux/amd64` image reference plus verified remote digest;
-- chart repository/version plus verified OCI digest;
+- canonical human release tag;
+- immutable `linux/amd64` image reference and verified remote digest when available;
+- chart repository/version and verified OCI digest when available;
 - successful image/chart remote read-back evidence;
 - successful applicable Node/Helm/container validation evidence;
 - known compatibility or rollout notes.
@@ -121,7 +158,7 @@ Do not edit or reconcile the Flux cluster from this repository. Hand off only pr
 Flux #288 owns:
 
 - encrypted `agent-state-dashboard-supabase` Secret material;
-- registry pull credentials;
+- registry pull credentials if the selected registry ever requires them;
 - desired image/chart references and digests;
 - Tailscale and any owner-approved Cloudflare exposure;
 - cluster reconciliation;
