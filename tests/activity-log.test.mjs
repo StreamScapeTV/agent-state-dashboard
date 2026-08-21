@@ -143,6 +143,7 @@ test("Logs / Activity UI is session-only, filtered, expandable and separate from
 
   assert.match(dashboardSource, /<Tab value="logs" label="Logs \/ Activity" \/>/);
   assert.match(dashboardSource, /<ActivityLogView activities=\{activities\} projectScope=\{rawProjectScope\} \/>/);
-  assert.doesNotMatch(dashboardSource, /Recent live activity/);
+  assert.match(dashboardSource, /Recent live activity is available under Logs \/ Activity/);
+  assert.doesNotMatch(dashboardSource, /activities\.slice\(0, 8\)/);
   assert.doesNotMatch(`${source}\n${dashboardSource}\n${realtimeSource}`, /localStorage|sessionStorage|indexedDB/i);
 });
