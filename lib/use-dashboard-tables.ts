@@ -170,22 +170,20 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
         }
         if (status === "reconnecting") {
           socketLiveRef.current = false;
-          setConnectionState("reconnecting");
+          setConnectionState(bootstrappedRef.current ? "reconnecting" : "connecting");
           appendActivity(connectionActivity(observedAt, "Realtime reconnecting"));
           return;
         }
 
         const wasLive = socketLiveRef.current;
         socketLiveRef.current = true;
-        if (!bootstrapStartedRef.current) {
-          bootstrapStartedRef.current = true;
-          appendActivity(connectionActivity(observedAt, "Realtime subscribed; bootstrapping"));
-          void requestFullRefresh("bootstrap");
+        if (!bootstrappedRef.current) {
+          appendActivity(connectionActivity(observedAt, "Realtime subscribed during bootstrap"));
           return;
         }
         if (!wasLive) {
           setConnectionState("recovering");
-          appendActivity(connectionActivity(observedAt, "Realtime reconnected; reconciling"));
+          appendActivity(connectionActivity(observedAt, "Realtime connected; reconciling"));
           void requestFullRefresh("reconnect");
           return;
         }
@@ -193,6 +191,10 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
       },
       onChange: applyLiveChange,
     });
+
+    bootstrapStartedRef.current = true;
+    appendActivity(connectionActivity(new Date().toISOString(), "Bootstrap snapshot started"));
+    void requestFullRefresh("bootstrap");
 
     return () => {
       unsubscribe();
