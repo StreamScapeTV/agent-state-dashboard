@@ -102,7 +102,11 @@ function AllProjectsLanding({
             Choose a project to inspect its actors, blockers, and current work.
           </Typography>
         </Box>
-        <Chip label={`${projects.length} projects · ${rows.length} agents`} variant="outlined" />
+        <Chip
+          label={`${projects.length} projects · ${rows.length} agents`}
+          variant="outlined"
+          sx={{ alignSelf: { xs: "flex-start", sm: "center" } }}
+        />
       </Stack>
 
       {projects.length === 0 ? (
@@ -114,7 +118,7 @@ function AllProjectsLanding({
           sx={{
             display: "grid",
             gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))", xl: "repeat(3, minmax(0, 1fr))" },
-            gap: 1.25,
+            gap: { xs: 1, sm: 1.25 },
           }}
         >
           {projects.map((summary) => {
@@ -124,15 +128,20 @@ function AllProjectsLanding({
                 <CardActionArea
                   onClick={() => onSelectProject(summary.projectKey)}
                   aria-label={`Open ${summary.projectKey}`}
-                  sx={{ height: "100%", alignItems: "stretch" }}
+                  sx={{ height: "100%", minHeight: { xs: 168, sm: 176 }, alignItems: "stretch" }}
                 >
-                  <CardContent sx={{ height: "100%" }}>
+                  <CardContent sx={{ height: "100%", p: { xs: 1.5, sm: 2 } }}>
                     <Stack spacing={1.25} sx={{ height: "100%" }}>
-                      <Stack direction="row" sx={{ justifyContent: "space-between", gap: 1, alignItems: "center" }}>
+                      <Stack
+                        direction={{ xs: "column", sm: "row" }}
+                        sx={{ justifyContent: "space-between", gap: 0.75, alignItems: { sm: "center" } }}
+                      >
                         <Typography variant="h6" sx={{ minWidth: 0, overflowWrap: "anywhere" }}>
                           {summary.projectKey}
                         </Typography>
-                        {summary.phase ? <Chip size="small" label={summary.phase} variant="outlined" /> : null}
+                        {summary.phase ? (
+                          <Chip size="small" label={summary.phase} variant="outlined" sx={{ alignSelf: "flex-start" }} />
+                        ) : null}
                       </Stack>
                       <Typography
                         variant="body2"
@@ -143,6 +152,7 @@ function AllProjectsLanding({
                           WebkitLineClamp: 2,
                           WebkitBoxOrient: "vertical",
                           overflow: "hidden",
+                          overflowWrap: "anywhere",
                         }}
                       >
                         {summary.objective ?? "No current objective recorded."}
@@ -155,12 +165,13 @@ function AllProjectsLanding({
                             WebkitLineClamp: 2,
                             WebkitBoxOrient: "vertical",
                             overflow: "hidden",
+                            overflowWrap: "anywhere",
                           }}
                         >
                           Next: {summary.nextAction}
                         </Typography>
                       ) : null}
-                      <Stack direction="row" sx={{ gap: 0.75, flexWrap: "wrap", mt: "auto" }}>
+                      <Stack direction="row" sx={{ gap: 0.6, flexWrap: "wrap", mt: "auto" }}>
                         <Chip size="small" label={`${summary.total} agents`} />
                         <Chip size="small" label={`${summary.working} working`} color={summary.working > 0 ? "info" : "default"} variant="outlined" />
                         <Chip size="small" label={`${summary.blocked} blocked`} color={summary.blocked > 0 ? "warning" : "default"} variant="outlined" />
@@ -233,7 +244,7 @@ function SelectedProjectOverview({
 
   return (
     <Stack spacing={1.5}>
-      <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2 } }}>
+      <Paper variant="outlined" sx={{ p: { xs: 1.25, sm: 1.5, md: 2 } }}>
         <Stack spacing={1.5}>
           <Stack
             direction={{ xs: "column", md: "row" }}
@@ -244,14 +255,19 @@ function SelectedProjectOverview({
                 All projects
               </Button>
               <Stack direction="row" sx={{ gap: 1, alignItems: "center", flexWrap: "wrap" }}>
-                <Typography variant="h4" sx={{ overflowWrap: "anywhere" }}>{summary.projectKey}</Typography>
+                <Typography
+                  variant="h4"
+                  sx={{ fontSize: { xs: "1.65rem", sm: "2rem", md: "2.125rem" }, overflowWrap: "anywhere" }}
+                >
+                  {summary.projectKey}
+                </Typography>
                 {summary.phase ? <Chip label={summary.phase} size="small" variant="outlined" /> : null}
               </Stack>
-              <Typography variant="body1" sx={{ mt: 0.75 }}>
+              <Typography variant="body1" sx={{ mt: 0.75, overflowWrap: "anywhere" }}>
                 {summary.objective ?? "No current objective recorded."}
               </Typography>
               {summary.nextAction ? (
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, overflowWrap: "anywhere" }}>
                   Next: {summary.nextAction}
                 </Typography>
               ) : null}
@@ -267,8 +283,12 @@ function SelectedProjectOverview({
           <Box
             sx={{
               display: "grid",
-              gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(5, minmax(0, 1fr))" },
-              gap: 1,
+              gridTemplateColumns: {
+                xs: "repeat(2, minmax(0, 1fr))",
+                sm: "repeat(3, minmax(0, 1fr))",
+                lg: "repeat(5, minmax(0, 1fr))",
+              },
+              gap: { xs: 0.75, sm: 1 },
             }}
           >
             {cards.map((card) => {
@@ -279,14 +299,15 @@ function SelectedProjectOverview({
                     aria-pressed={active}
                     aria-label={`Show ${card.label.toLowerCase()} agents`}
                     onClick={() => onSelectStatus(card.value)}
+                    sx={{ minHeight: { xs: 78, sm: 82 } }}
                   >
-                    <CardContent sx={{ py: 1.25, "&:last-child": { pb: 1.25 } }}>
-                      <Stack direction="row" sx={{ gap: 1, alignItems: "center" }}>
+                    <CardContent sx={{ py: 1.1, px: { xs: 1.1, sm: 1.5 }, "&:last-child": { pb: 1.1 } }}>
+                      <Stack direction="row" sx={{ gap: 0.85, alignItems: "center" }}>
                         <Box sx={{ color: card.color === "default" ? "text.secondary" : `${card.color}.main`, display: "flex" }}>
                           {card.icon}
                         </Box>
-                        <Box>
-                          <Typography variant="h5">{card.count}</Typography>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="h5" sx={{ lineHeight: 1 }}>{card.count}</Typography>
                           <Typography variant="caption" color="text.secondary">{card.label}</Typography>
                         </Box>
                       </Stack>
@@ -299,10 +320,10 @@ function SelectedProjectOverview({
         </Stack>
       </Paper>
 
-      <Paper variant="outlined">
+      <Paper variant="outlined" sx={{ overflow: "hidden" }}>
         <Stack
           direction={{ xs: "column", sm: "row" }}
-          sx={{ px: 1.5, py: 1.25, justifyContent: "space-between", gap: 0.75, alignItems: { sm: "center" } }}
+          sx={{ px: { xs: 1.25, sm: 1.5 }, py: 1.25, justifyContent: "space-between", gap: 0.75, alignItems: { sm: "center" } }}
         >
           <Box>
             <Typography variant="h6">{selectedLabel}</Typography>
@@ -320,36 +341,60 @@ function SelectedProjectOverview({
           const primaryBlocker = row.blockerCues[0]?.reason ?? "Blocked reason not recorded";
           return (
             <Accordion key={row.key} disableGutters elevation={0} sx={{ borderTop: "1px solid", borderColor: "divider", "&:before": { display: "none" } }}>
-              <AccordionSummary expandIcon={<ExpandMoreRounded />} aria-controls={`${row.key}-details`}>
+              <AccordionSummary
+                expandIcon={<ExpandMoreRounded />}
+                aria-controls={`${row.key}-details`}
+                sx={{ px: { xs: 1.25, sm: 2 }, py: { xs: 0.25, sm: 0 } }}
+              >
                 <Box
                   sx={{
                     width: "100%",
                     display: "grid",
-                    gridTemplateColumns: { xs: "1fr", md: "minmax(130px, .7fr) minmax(140px, .8fr) minmax(220px, 1.8fr) minmax(110px, .7fr) minmax(180px, 1fr)" },
-                    gap: { xs: 0.5, md: 1.25 },
+                    gridTemplateColumns: {
+                      xs: "minmax(0, 1fr)",
+                      sm: "minmax(0, 1.3fr) minmax(120px, .7fr)",
+                      lg: "minmax(130px, .7fr) minmax(140px, .8fr) minmax(220px, 1.8fr) minmax(110px, .7fr) minmax(180px, 1fr)",
+                    },
+                    gap: { xs: 0.45, sm: 0.75, lg: 1.25 },
                     alignItems: "center",
-                    pr: 1,
+                    pr: { xs: 0.5, sm: 1 },
                   }}
                 >
-                  <Typography sx={{ fontWeight: 700 }}>{row.identity}</Typography>
-                  <Chip size="small" icon={statusIcon(row)} label={statusLabel(row)} color={statusColor(row)} sx={{ justifySelf: { md: "start" } }} />
+                  <Typography sx={{ fontWeight: 700, overflowWrap: "anywhere" }}>{row.identity}</Typography>
+                  <Chip size="small" icon={statusIcon(row)} label={statusLabel(row)} color={statusColor(row)} sx={{ justifySelf: "start" }} />
                   <Box sx={{ minWidth: 0 }}>
-                    <Typography noWrap>{row.workSummary}</Typography>
+                    <Typography
+                      sx={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {row.workSummary}
+                    </Typography>
                     {row.blocked ? (
-                      <Typography variant="caption" color="warning.main" noWrap>
+                      <Typography
+                        variant="caption"
+                        color="warning.main"
+                        sx={{ display: "block", whiteSpace: "normal", overflowWrap: "anywhere" }}
+                      >
                         Blocker: {primaryBlocker}
                       </Typography>
                     ) : null}
                   </Box>
                   <Typography variant="caption" color="text.secondary">{ageLabel(row, nowMs)}</Typography>
-                  <Typography variant="caption" noWrap>Next: {row.nextAction ?? "—"}</Typography>
+                  <Typography variant="caption" sx={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                    Next: {row.nextAction ?? "—"}
+                  </Typography>
                 </Box>
               </AccordionSummary>
-              <AccordionDetails sx={{ pt: 0 }} id={`${row.key}-details`}>
+              <AccordionDetails sx={{ pt: 0, px: { xs: 1.25, sm: 2 }, pb: { xs: 1.5, sm: 2 } }} id={`${row.key}-details`}>
                 <Stack spacing={1.25}>
                   <Box>
                     <Typography variant="overline">Current assignment / work</Typography>
-                    <Typography variant="body2">{assignmentPreview(row)}</Typography>
+                    <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>{assignmentPreview(row)}</Typography>
                   </Box>
 
                   {row.blocked ? (
@@ -359,8 +404,8 @@ function SelectedProjectOverview({
                         <Alert severity="warning">Blocked reason not recorded</Alert>
                       ) : row.blockerCues.map((cue, index) => (
                         <Alert key={`${cue.source}-${cue.workKey ?? "actor"}-${index}`} severity="warning" variant="outlined">
-                          <Typography variant="body2" sx={{ fontWeight: 700 }}>{cue.reason}</Typography>
-                          <Typography variant="caption" color="text.secondary">
+                          <Typography variant="body2" sx={{ fontWeight: 700, overflowWrap: "anywhere" }}>{cue.reason}</Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
                             {cue.source === "work" ? `Work ${cue.workKey ?? "unknown"}` : "Actor state"}
                             {cue.summary ? ` · ${cue.summary}` : ""}
                             {cue.nextAction ? ` · Next: ${cue.nextAction}` : ""}
@@ -378,11 +423,18 @@ function SelectedProjectOverview({
 
                   <Box>
                     <Typography variant="overline">Next action</Typography>
-                    <Typography variant="body2">{row.nextAction ?? "No current next action recorded."}</Typography>
+                    <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
+                      {row.nextAction ?? "No current next action recorded."}
+                    </Typography>
                   </Box>
 
                   <Box>
-                    <Button size="small" startIcon={<VisibilityRounded />} onClick={() => onView(row.key)}>
+                    <Button
+                      size="small"
+                      startIcon={<VisibilityRounded />}
+                      onClick={() => onView(row.key)}
+                      sx={{ width: { xs: "100%", sm: "auto" } }}
+                    >
                       Full agent details
                     </Button>
                   </Box>

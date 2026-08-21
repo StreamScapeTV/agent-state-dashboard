@@ -36,6 +36,8 @@ import {
   TableRow,
   Tabs,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityLogView } from "@/components/ActivityLogView";
@@ -108,14 +110,32 @@ function tableHealthColor(
   return "success";
 }
 
+function BrandMark({ size = 56 }: { size?: number }) {
+  return (
+    <Box
+      component="img"
+      src="/icon.svg"
+      alt=""
+      aria-hidden="true"
+      sx={{
+        width: size,
+        height: size,
+        flex: "0 0 auto",
+        borderRadius: "22%",
+        filter: "drop-shadow(0 10px 24px rgba(0, 212, 255, 0.16))",
+      }}
+    />
+  );
+}
+
 function JsonPanel({ value }: { value: unknown }) {
   return (
     <Box
       component="pre"
       sx={{
         m: 0,
-        p: 1.5,
-        maxHeight: 360,
+        p: { xs: 1, sm: 1.5 },
+        maxHeight: { xs: "46vh", sm: 360 },
         overflow: "auto",
         border: "1px solid",
         borderColor: "divider",
@@ -123,7 +143,7 @@ function JsonPanel({ value }: { value: unknown }) {
         whiteSpace: "pre-wrap",
         wordBreak: "break-word",
         userSelect: "text",
-        fontSize: 12,
+        fontSize: { xs: 11, sm: 12 },
       }}
     >
       {pretty(value)}
@@ -134,7 +154,7 @@ function JsonPanel({ value }: { value: unknown }) {
 function LongText({ label, value }: { label: string; value: string | null }) {
   return (
     <Box>
-      <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
+      <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", gap: 1 }}>
         <Typography variant="overline">{label}</Typography>
         <IconButton
           size="small"
@@ -151,9 +171,9 @@ function LongText({ label, value }: { label: string; value: string | null }) {
         component="pre"
         sx={{
           m: 0,
-          p: 1.5,
+          p: { xs: 1, sm: 1.5 },
           minHeight: 72,
-          maxHeight: 260,
+          maxHeight: { xs: "36vh", sm: 260 },
           overflow: "auto",
           border: "1px solid",
           borderColor: "divider",
@@ -162,7 +182,7 @@ function LongText({ label, value }: { label: string; value: string | null }) {
           wordBreak: "break-word",
           userSelect: "text",
           font: "inherit",
-          fontSize: 13,
+          fontSize: { xs: 12, sm: 13 },
         }}
       >
         {value ?? "No current value."}
@@ -172,21 +192,25 @@ function LongText({ label, value }: { label: string; value: string | null }) {
 }
 
 function AgentDetailDialog({ row, onClose }: { row: AgentViewRow | null; onClose: () => void }) {
+  const theme = useTheme();
+  const compactDialog = useMediaQuery(theme.breakpoints.down("sm"));
+
   return (
-    <Dialog open={Boolean(row)} onClose={onClose} maxWidth="lg" fullWidth>
+    <Dialog open={Boolean(row)} onClose={onClose} maxWidth="lg" fullWidth fullScreen={compactDialog}>
       {row ? (
         <>
-          <DialogTitle>{row.projectKey} · {row.identity}</DialogTitle>
+          <DialogTitle sx={{ overflowWrap: "anywhere" }}>{row.projectKey} · {row.identity}</DialogTitle>
           <DialogContent dividers>
-            <Stack spacing={2}>
-              <Stack direction="row" sx={{ gap: 0.75, alignItems: "center", flexWrap: "wrap" }}>
+            <Stack spacing={{ xs: 1.5, sm: 2 }}>
+              <Stack direction={{ xs: "column", sm: "row" }} sx={{ gap: 0.75, alignItems: { sm: "center" }, flexWrap: "wrap" }}>
                 <Chip
                   icon={statusIcon(row)}
                   label={statusLabel(row)}
                   color={statusColor(row)}
                   variant="outlined"
+                  sx={{ alignSelf: "flex-start" }}
                 />
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
                   Assigned: {displayTime(row.assignedAt)} · Returned: {displayTime(row.lastReturnedAt)} · Duration: {formatDuration(row.durationMs)}
                 </Typography>
               </Stack>
@@ -198,8 +222,8 @@ function AgentDetailDialog({ row, onClose }: { row: AgentViewRow | null; onClose
                       <Alert severity="warning">Blocked reason not recorded</Alert>
                     ) : row.blockerCues.map((cue, index) => (
                       <Alert key={`${cue.source}-${cue.workKey ?? "actor"}-${index}`} severity="warning" variant="outlined">
-                        <Typography variant="body2" sx={{ fontWeight: 700 }}>{cue.reason}</Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="body2" sx={{ fontWeight: 700, overflowWrap: "anywhere" }}>{cue.reason}</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
                           {cue.source === "work" ? `Work ${cue.workKey ?? "unknown"}` : "Actor state"}
                           {cue.summary ? ` · ${cue.summary}` : ""}
                           {cue.nextAction ? ` · Next: ${cue.nextAction}` : ""}
@@ -234,8 +258,8 @@ function AgentDetailDialog({ row, onClose }: { row: AgentViewRow | null; onClose
               </Box>
             </Stack>
           </DialogContent>
-          <DialogActions>
-            <Button onClick={onClose}>Close</Button>
+          <DialogActions sx={{ px: { xs: 2, sm: 3 } }}>
+            <Button onClick={onClose} sx={{ width: { xs: "100%", sm: "auto" } }}>Close</Button>
           </DialogActions>
         </>
       ) : null}
@@ -259,6 +283,8 @@ function RawTablesDialog({
   onClose: () => void;
   projectScope: string | null;
 }) {
+  const theme = useTheme();
+  const compactDialog = useMediaQuery(theme.breakpoints.down("sm"));
   const [table, setTable] = useState<RawTableName>("current_projects");
   const [rows, setRows] = useState<unknown[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -297,22 +323,25 @@ function RawTablesDialog({
   );
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
-      <DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth fullScreen={compactDialog}>
+      <DialogTitle sx={{ overflowWrap: "anywhere" }}>
         Raw current-table explorer{projectScope ? ` · ${projectScope}` : " · All projects"}
       </DialogTitle>
-      <DialogContent dividers>
+      <DialogContent dividers sx={{ px: { xs: 1, sm: 3 } }}>
         <Tabs
           value={table}
           onChange={(_, value: RawTableName) => setTable(value)}
           variant="scrollable"
+          scrollButtons="auto"
+          allowScrollButtonsMobile
+          sx={{ mb: 1 }}
         >
           {RAW_TABLE_NAMES.map((name) => (
             <Tab key={name} value={name} label={name.replace("current_", "")} />
           ))}
         </Tabs>
-        {error ? <Alert severity="error">{error}</Alert> : null}
-        <TableContainer sx={{ maxHeight: 420 }}>
+        {error ? <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert> : null}
+        <TableContainer sx={{ maxHeight: { xs: "40vh", sm: 420 } }}>
           <Table size="small">
             <TableBody>
               {visibleRows.map((row, pageIndex) => {
@@ -332,7 +361,10 @@ function RawTablesDialog({
                     }}
                   >
                     <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: "monospace" }}>
+                      <Typography
+                        variant="caption"
+                        sx={{ fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                      >
                         {pretty(row)}
                       </Typography>
                     </TableCell>
@@ -342,27 +374,29 @@ function RawTablesDialog({
             </TableBody>
           </Table>
         </TableContainer>
-        <TablePagination
-          component="div"
-          count={rows.length}
-          page={page}
-          rowsPerPage={rowsPerPage}
-          rowsPerPageOptions={[25, 50, 100]}
-          onPageChange={(_, nextPage) => {
-            setPage(nextPage);
-            setSelectedIndex(nextPage * rowsPerPage);
-          }}
-          onRowsPerPageChange={(event) => {
-            setRowsPerPage(Number.parseInt(event.target.value, 10));
-            setPage(0);
-            setSelectedIndex(0);
-          }}
-        />
+        <Box sx={{ overflowX: "auto" }}>
+          <TablePagination
+            component="div"
+            count={rows.length}
+            page={page}
+            rowsPerPage={rowsPerPage}
+            rowsPerPageOptions={[25, 50, 100]}
+            onPageChange={(_, nextPage) => {
+              setPage(nextPage);
+              setSelectedIndex(nextPage * rowsPerPage);
+            }}
+            onRowsPerPageChange={(event) => {
+              setRowsPerPage(Number.parseInt(event.target.value, 10));
+              setPage(0);
+              setSelectedIndex(0);
+            }}
+          />
+        </Box>
         <Typography variant="overline">Selected row JSON</Typography>
         <JsonPanel value={rows[selectedIndex] ?? {}} />
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+      <DialogActions sx={{ px: { xs: 2, sm: 3 } }}>
+        <Button onClick={onClose} sx={{ width: { xs: "100%", sm: "auto" } }}>Close</Button>
       </DialogActions>
     </Dialog>
   );
@@ -452,24 +486,49 @@ export function DashboardClient() {
     : null;
 
   return (
-    <Container maxWidth="xl" sx={{ py: { xs: 1.5, md: 2.5 } }}>
+    <Container
+      maxWidth="xl"
+      disableGutters
+      sx={{ py: { xs: 1.25, sm: 1.75, md: 2.5 }, px: { xs: 1.25, sm: 2, lg: 2.5 } }}
+    >
       <Stack
         direction={{ xs: "column", md: "row" }}
-        sx={{ justifyContent: "space-between", gap: 1.5, mb: 1.5, alignItems: { md: "center" } }}
+        sx={{ justifyContent: "space-between", gap: 1.5, mb: { xs: 1.5, md: 2 }, alignItems: { md: "center" } }}
       >
-        <Box>
-          <Typography variant="overline">STREAMSCAPETV · AGENT STATE</Typography>
-          <Typography variant="h4">Operations console</Typography>
-        </Box>
-        <Stack direction="row" sx={{ gap: 0.75, alignItems: "center", flexWrap: "wrap" }}>
+        <Stack direction="row" sx={{ gap: { xs: 1.25, sm: 1.5 }, alignItems: "center", minWidth: 0 }}>
+          <BrandMark size={58} />
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="overline" sx={{ color: "primary.main", letterSpacing: "0.12em" }}>
+              STREAMSCAPETV · AGENT STATE
+            </Typography>
+            <Typography
+              variant="h4"
+              sx={{ fontSize: { xs: "1.65rem", sm: "2rem", md: "2.125rem" }, lineHeight: 1.12, overflowWrap: "anywhere" }}
+            >
+              Agent State Dashboard
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35 }}>
+              Real-time overview of AI agents and projects
+            </Typography>
+          </Box>
+        </Stack>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          sx={{ gap: 0.75, alignItems: { sm: "center" }, width: { xs: "100%", md: "auto" } }}
+        >
           <Chip
             label={healthy
               ? `Live · ${lastRefresh ? shortTime(lastRefresh.toISOString()) : "current"}`
               : `${connectionLabel} · data ${freshness}`}
             color={healthy ? "success" : connectionState === "connecting" ? "info" : "warning"}
             variant={healthy ? "outlined" : "filled"}
+            sx={{ alignSelf: { xs: "stretch", sm: "center" }, justifyContent: "center" }}
           />
-          <Button size="small" onClick={() => setHealthOpen((value) => !value)}>
+          <Button
+            size="small"
+            onClick={() => setHealthOpen((value) => !value)}
+            sx={{ width: { xs: "100%", sm: "auto" } }}
+          >
             {healthOpen ? "Hide live details" : "Live details"}
           </Button>
         </Stack>
@@ -483,7 +542,7 @@ export function DashboardClient() {
       {refreshing && !healthy ? <LinearProgress sx={{ mb: 1 }} /> : null}
 
       <Collapse in={healthOpen || !healthy}>
-        <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
+        <Paper variant="outlined" sx={{ p: { xs: 1, sm: 1.25 }, mb: 1.5 }}>
           <Stack spacing={1}>
             <Stack direction="row" sx={{ gap: 0.75, flexWrap: "wrap" }}>
               {RAW_TABLE_NAMES.map((table) => {
@@ -507,7 +566,7 @@ export function DashboardClient() {
       </Collapse>
 
       {loading && !snapshot ? (
-        <Paper variant="outlined" sx={{ p: 3 }}>
+        <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>
           <Typography color="text.secondary">Loading current Agent State…</Typography>
         </Paper>
       ) : snapshot ? (
@@ -524,10 +583,10 @@ export function DashboardClient() {
           />
 
           {selectedProjectKey !== "all" ? (
-            <Paper variant="outlined" sx={{ mt: 1.5 }}>
+            <Paper variant="outlined" sx={{ mt: 1.5, overflow: "hidden" }}>
               <Stack
                 direction={{ xs: "column", md: "row" }}
-                sx={{ px: 1.5, pt: 1.25, gap: 1, justifyContent: "space-between", alignItems: { md: "center" } }}
+                sx={{ px: { xs: 1.25, sm: 1.5 }, pt: 1.25, gap: 1, justifyContent: "space-between", alignItems: { md: "center" } }}
               >
                 <Box>
                   <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Advanced operations</Typography>
@@ -535,7 +594,10 @@ export function DashboardClient() {
                     Deep current-state inspection stays secondary to the project overview.
                   </Typography>
                 </Box>
-                <FormControl size="small" sx={{ minWidth: 210 }}>
+                <FormControl
+                  size="small"
+                  sx={{ minWidth: { sm: 210 }, width: { xs: "100%", sm: "auto" } }}
+                >
                   <InputLabel>Advanced scope</InputLabel>
                   <Select
                     value={advancedScope}
@@ -552,7 +614,8 @@ export function DashboardClient() {
                 onChange={(_, value: AdvancedView) => setAdvancedView(value)}
                 variant="scrollable"
                 scrollButtons="auto"
-                sx={{ px: 0.5, borderBottom: "1px solid", borderColor: "divider" }}
+                allowScrollButtonsMobile
+                sx={{ px: 0.5, borderBottom: "1px solid", borderColor: "divider", mt: 0.5 }}
               >
                 <Tab value="logs" label="Logs / Activity" />
                 <Tab value="attention" label="Attention" />
@@ -562,7 +625,7 @@ export function DashboardClient() {
                 <Tab value="raw" label="Raw tables" />
               </Tabs>
 
-              <Box sx={{ p: advancedView === "raw" ? 1.5 : 0 }}>
+              <Box sx={{ p: advancedView === "raw" ? { xs: 1.25, sm: 1.5 } : 0, minWidth: 0 }}>
                 {advancedView === "logs" ? (
                   <ActivityLogView activities={activities} projectScope={rawProjectScope} />
                 ) : null}
@@ -592,7 +655,13 @@ export function DashboardClient() {
                         Opens deliberate JSON inspection for {rawProjectScope ?? "all projects"}.
                       </Typography>
                     </Box>
-                    <Button startIcon={<StorageRounded />} onClick={() => setRawOpen(true)}>Open raw tables</Button>
+                    <Button
+                      startIcon={<StorageRounded />}
+                      onClick={() => setRawOpen(true)}
+                      sx={{ width: { xs: "100%", sm: "auto" } }}
+                    >
+                      Open raw tables
+                    </Button>
                   </Stack>
                 ) : null}
               </Box>
