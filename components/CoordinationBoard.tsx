@@ -29,14 +29,14 @@ import { useMemo, useState } from "react";
 import {
   buildCoordinationItems,
   coordinationCounts,
-  dedupeCurrentCoordination,
   filterCoordinationItems,
   type CoordinationBoardItem,
   type CoordinationDirection,
 } from "@/lib/coordination-board";
-import type { AgentViewRow } from "@/types/dashboard";
+import type { AgentViewRow, CurrentCoordinationRecord } from "@/types/dashboard";
 
 interface CoordinationBoardProps {
+  coordination: CurrentCoordinationRecord[];
   agents: AgentViewRow[];
   onView: (key: string) => void;
 }
@@ -57,14 +57,13 @@ function participantKey(item: CoordinationBoardItem, participant: "sender" | "re
   return actor?.key ?? null;
 }
 
-export function CoordinationBoard({ agents, onView }: CoordinationBoardProps) {
+export function CoordinationBoard({ coordination, agents, onView }: CoordinationBoardProps) {
   const [direction, setDirection] = useState<CoordinationDirection>("inbox");
   const [identity, setIdentity] = useState("Orchestrator");
   const [project, setProject] = useState("all");
   const [query, setQuery] = useState("");
   const [rawItem, setRawItem] = useState<CoordinationBoardItem | null>(null);
 
-  const coordination = useMemo(() => dedupeCurrentCoordination(agents), [agents]);
   const items = useMemo(() => buildCoordinationItems(coordination, agents), [coordination, agents]);
   const filtered = useMemo(
     () => filterCoordinationItems(items, { direction, identity, project, query }),
