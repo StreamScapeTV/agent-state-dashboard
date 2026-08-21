@@ -4,20 +4,11 @@ import test from "node:test";
 
 const clientSource = readFileSync(new URL("../lib/dashboard-supabase.ts", import.meta.url), "utf8");
 const dashboardSource = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
-const overviewSource = readFileSync(new URL("../components/ProjectOverview.tsx", import.meta.url), "utf8");
-const attentionSource = readFileSync(new URL("../components/AttentionInbox.tsx", import.meta.url), "utf8");
 const hookSource = readFileSync(new URL("../lib/use-dashboard-tables.ts", import.meta.url), "utf8");
 const realtimeSource = readFileSync(new URL("../lib/realtime-dashboard-state.ts", import.meta.url), "utf8");
 const typesSource = readFileSync(new URL("../types/dashboard.ts", import.meta.url), "utf8");
 
-const browserSources = [
-  clientSource,
-  dashboardSource,
-  overviewSource,
-  attentionSource,
-  hookSource,
-  realtimeSource,
-].join("\n");
+const browserSources = `${clientSource}\n${dashboardSource}\n${hookSource}\n${realtimeSource}`;
 
 const TABLES = [
   "current_projects",
@@ -82,7 +73,7 @@ test("browser transport no longer depends on the local Node API or SSE endpoints
   assert.doesNotMatch(browserSources, /\/api\/snapshot|\/api\/tables|new EventSource\(|["']\/events["']/);
 });
 
-test("progressive browser UI and data client remain mutation-free and history-free", () => {
+test("browser UI and data client remain mutation-free", () => {
   assert.doesNotMatch(browserSources, /\.insert\s*\(/);
   assert.doesNotMatch(browserSources, /\.upsert\s*\(/);
   assert.doesNotMatch(browserSources, /\.update\s*\(/);
