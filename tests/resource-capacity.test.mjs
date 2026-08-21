@@ -224,7 +224,7 @@ test("UI exposes exact counts and guidance without takeover/release controls or 
   assert.match(source, /Resources &amp; Capacity/);
   assert.match(source, /Exact current resource keys are authoritative\. Pattern expansion and age expiry are not inferred/);
   assert.match(source, /CAPACITY_WARNING_RATIO/);
-  assert.match(source, /\{usage\.used\} \/ \{usage\.limit\}/);
+  assert.match(source, /\$\{usage\.used\} \/ \$\{usage\.limit\}/);
   assert.match(source, /Ownership attention/);
   assert.match(source, /Capacity attention/);
   assert.match(source, /onClick=\{\(\) => onView\(item\.owner\.key\)\}/);
