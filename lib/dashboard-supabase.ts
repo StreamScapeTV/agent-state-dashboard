@@ -5,6 +5,13 @@ import {
   isIssueTableName,
   type DashboardTableName,
 } from "@/lib/agent-state-read-contract";
+import type {
+  DashboardRawSnapshot,
+  DashboardReadOptions,
+  DashboardReadSource,
+  DashboardRealtimeHandlers,
+  DashboardTableReadOptions,
+} from "@/lib/dashboard-read-source";
 import type { DashboardRealtimeChange, DashboardRealtimeEventType } from "@/lib/realtime-dashboard-state";
 import { RAW_TABLE_NAMES } from "@/types/dashboard";
 
@@ -34,22 +41,6 @@ const TABLE_ORDER_COLUMNS: Record<DashboardTableName, readonly string[]> = {
     "blocker_issue_number",
   ],
 };
-
-export interface DashboardRawSnapshot {
-  tables: Partial<Record<DashboardTableName, unknown[]>>;
-  errors: Partial<Record<DashboardTableName, string>>;
-  refreshedAt: string;
-}
-
-export interface DashboardRealtimeHandlers {
-  onStatus: (status: "connecting" | "live" | "reconnecting") => void;
-  onChange: (change: DashboardRealtimeChange) => void;
-}
-
-interface ReadTableOptions {
-  pageSize?: number;
-  signal?: AbortSignal;
-}
 
 type DashboardSupabaseClient = SupabaseClient<
   any,
@@ -115,7 +106,7 @@ function pageSize(value: number | undefined): number {
 export async function readDashboardTable(
   client: DashboardSupabaseClient,
   table: DashboardTableName,
-  options: ReadTableOptions = {},
+  options: DashboardTableReadOptions = {},
 ): Promise<unknown[]> {
   const limit = pageSize(options.pageSize);
   const rows: unknown[] = [];
@@ -165,7 +156,7 @@ function errorMessage(caught: unknown, table: DashboardTableName): string {
 
 export async function readDashboardSnapshot(
   client: DashboardSupabaseClient,
-  options: Pick<ReadTableOptions, "signal"> = {},
+  options: DashboardReadOptions = {},
 ): Promise<DashboardRawSnapshot> {
   const results = await Promise.allSettled(
     DASHBOARD_TABLES.map((table) => readDashboardTable(client, table, options)),
@@ -281,5 +272,27 @@ export function subscribeToDashboardChanges(
     active = false;
     void client.removeChannel(coreChannel);
     void client.removeChannel(issueChannel);
+  };
+}
+
+export function createSupabaseDashboardReadSource(
+  clientFactory: () => DashboardSupabaseClient = getDashboardSupabaseClient,
+): DashboardReadSource {
+  return {
+    tables: DASHBOARD_TABLES,
+    readSnapshot(options = {}) {
+      return readDashboardSnapshot(clientFactory(), options);
+    },
+    async readTable(table, options = {}) {
+      try {
+        return await readDashboardTable(clientFactory(), table, options);
+      } catch (caught) {
+        if (isMissingAdditiveTableError(caught, table)) return [];
+        throw caught;
+      }
+    },
+    subscribe(handlers) {
+      return subscribeToDashboardChanges(clientFactory(), handlers);
+    },
   };
 }

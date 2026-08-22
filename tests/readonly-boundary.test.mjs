@@ -4,12 +4,13 @@ import test from "node:test";
 
 const clientSource = readFileSync(new URL("../lib/dashboard-supabase.ts", import.meta.url), "utf8");
 const contractSource = readFileSync(new URL("../lib/agent-state-read-contract.ts", import.meta.url), "utf8");
+const readSource = readFileSync(new URL("../lib/dashboard-read-source.ts", import.meta.url), "utf8");
 const dashboardSource = readFileSync(new URL("../components/DashboardClient.tsx", import.meta.url), "utf8");
 const hookSource = readFileSync(new URL("../lib/use-dashboard-tables.ts", import.meta.url), "utf8");
 const realtimeSource = readFileSync(new URL("../lib/realtime-dashboard-state.ts", import.meta.url), "utf8");
 const typesSource = readFileSync(new URL("../types/dashboard.ts", import.meta.url), "utf8");
 
-const browserSources = `${clientSource}\n${contractSource}\n${dashboardSource}\n${hookSource}\n${realtimeSource}`;
+const browserSources = `${clientSource}\n${contractSource}\n${readSource}\n${dashboardSource}\n${hookSource}\n${realtimeSource}`;
 
 const CORE_TABLES = [
   "current_projects",
@@ -35,14 +36,15 @@ test("all seven dashboard tables bootstrap independently through the exact proxy
   for (const table of CORE_TABLES) assert.match(typesSource, new RegExp(`"${table}"`));
   for (const table of ADDITIVE_TABLES) assert.match(contractSource, new RegExp(`"${table}"`));
   assert.match(clientSource, /DASHBOARD_TABLES: readonly DashboardTableName\[\] = DASHBOARD_TABLE_NAMES/);
+  assert.match(readSource, /DASHBOARD_READ_TABLES: readonly DashboardTableName\[\] = DASHBOARD_TABLE_NAMES/);
   assert.match(clientSource, /Promise\.allSettled\(/);
   assert.match(clientSource, /DASHBOARD_TABLES\.map\(\(table\) => readDashboardTable\(client, table, options\)\)/);
   assert.match(clientSource, /client\.from\(table\)/);
   assert.match(clientSource, /select\("\*", \{ count: "exact" \}\)/);
   assert.match(clientSource, /query = query\.order\(column, \{ ascending: true \}\)/);
   assert.match(clientSource, /query\.range\(from, from \+ limit - 1\)/);
-  assert.match(hookSource, /readDashboardSnapshot\(client, \{ signal: controller\.signal \}\)/);
-  assert.match(hookSource, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
+  assert.match(hookSource, /source\.readSnapshot\(\{ signal: controller\.signal \}\)/);
+  assert.match(hookSource, /source\.readTable\(table, \{ signal: controller\.signal \}\)/);
   assert.match(dashboardSource, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
 });
 
@@ -97,6 +99,7 @@ test("rollout tolerance is bounded to the two additive tables and never negotiat
   assert.match(clientSource, /MISSING_TABLE_CODE = "PGRST205"/);
   assert.match(clientSource, /isIssueTableName\(table\)/);
   assert.match(clientSource, /isMissingAdditiveTableError\(result\.reason, table\)/);
-  assert.match(hookSource, /isMissingAdditiveTableError\(caught, table\)/);
+  assert.match(clientSource, /if \(isMissingAdditiveTableError\(caught, table\)\) return \[\];/);
+  assert.doesNotMatch(hookSource, /isMissingAdditiveTableError/);
   assert.doesNotMatch(browserSources, /schemaVersion|schema_version|current_issues_v\d|current_issue_dependencies_v\d/i);
 });
