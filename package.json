@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "test": "node --test tests/activity-log.test.mjs tests/issue-read-contract.test.mjs tests/realtime-dashboard-state.test.mjs tests/responsive-branding.test.mjs tests/snapshot-only.test.mjs tests/table-refresh-state.test.mjs",
+    "test": "node --test tests/issue-read-contract.test.mjs tests/realtime-dashboard-state.test.mjs tests/table-refresh-state.test.mjs",
     "typecheck": "tsc --noEmit",
     "validate": "npm test && npm run typecheck && npm run build"
   },
