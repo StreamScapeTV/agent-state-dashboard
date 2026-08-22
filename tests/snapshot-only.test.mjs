@@ -14,7 +14,7 @@ test("frontend uses resilient bootstrap plus core direct Realtime changes and bo
   assert.match(hookSource, /readDashboardSnapshot\(client, \{ signal: controller\.signal \}\)/);
   assert.match(clientSource, /DASHBOARD_PROXY_PATH = "\/supabase"/);
   assert.match(clientSource, /Promise\.allSettled/);
-  assert.match(clientSource, /handlers\.onChange\(\{/);
+  assert.match(clientSource, /onChange\(\{/);
   assert.match(hookSource, /onChange: applyLiveChange/);
   assert.match(hookSource, /applyRealtimeChangeToTableStates\(current, change\)/);
   assert.match(hookSource, /if \(isIssueTableName\(change\.table\)\)/);
