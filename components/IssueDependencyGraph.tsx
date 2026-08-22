@@ -14,15 +14,9 @@ import {
   Box,
   Button,
   ButtonBase,
-  Checkbox,
   Chip,
-  FormControl,
   IconButton,
-  InputLabel,
-  ListItemText,
-  MenuItem,
   Paper,
-  Select,
   Stack,
   Tooltip,
   Typography,
@@ -95,8 +89,8 @@ function IssueGraphNodeCard({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const color = statusColor(node.visualStatus);
   const issue = node.issue;
+  const color = statusColor(node.visualStatus);
   const summary = issue.summary.trim();
   const assignedActor = issue.assigned_actor?.trim() || null;
   const blockerReason = issue.blocker_reason?.trim() || null;
@@ -105,7 +99,7 @@ function IssueGraphNodeCard({
 
   return (
     <Paper
-      data-graph-node
+      data-graph-node="true"
       elevation={expanded ? 10 : 2}
       sx={{
         position: "absolute",
@@ -147,25 +141,13 @@ function IssueGraphNodeCard({
         <Typography
           variant="caption"
           color="text.secondary"
-          sx={{
-            width: "100%",
-            fontWeight: 700,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
+          sx={{ width: "100%", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
         >
           {issue.project_key}
         </Typography>
         <Typography
           variant={expanded ? "subtitle2" : "caption"}
-          sx={{
-            width: "100%",
-            fontWeight: 800,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
+          sx={{ width: "100%", fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
         >
           {assignedActor ? `${assignedActor} · #${issue.issue_number}` : `#${issue.issue_number}`}
         </Typography>
@@ -277,7 +259,7 @@ export function IssueDependencyGraph({
     originY: number;
   } | null>(null);
 
-  const availableSignature = availableProjects.join("\u0000");
+  const issueProjectSignature = availableProjects.join("\u0000");
   const relationSignature = useMemo(() => dependencies
     .map((edge) => `${edge.dependent_project_key}#${edge.dependent_issue_number}>${edge.blocker_project_key}#${edge.blocker_issue_number}`)
     .sort()
@@ -293,7 +275,7 @@ export function IssueDependencyGraph({
       return normalizeVisibleProjects(targetProjectKey, current, issues);
     });
     if (targetChanged) setExpandedNodeId(null);
-  }, [targetProjectKey, availableSignature, relationSignature, issues, dependencies]);
+  }, [targetProjectKey, issueProjectSignature, relationSignature, issues, dependencies]);
 
   const graph = useMemo(() => buildIssueDependencyGraph(
     issues,
@@ -360,8 +342,8 @@ export function IssueDependencyGraph({
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
-    const target = event.target as Element;
-    if (target.closest("[data-graph-node], [data-graph-control]")) return;
+    const element = event.target instanceof Element ? event.target : null;
+    if (element?.closest("[data-graph-node], [data-graph-control]")) return;
     panRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -395,6 +377,17 @@ export function IssueDependencyGraph({
 
   if (!graph) return null;
 
+  const toggleProject = (projectKey: string) => {
+    if (projectKey === targetProjectKey) return;
+    setVisibleProjects((current) => {
+      const next = current.includes(projectKey)
+        ? current.filter((value) => value !== projectKey)
+        : [...current, projectKey];
+      return normalizeVisibleProjects(targetProjectKey, next, issues);
+    });
+    setExpandedNodeId(null);
+  };
+
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, p: { xs: 1.25, sm: 1.5 }, minWidth: 0 }}>
       <Stack spacing={1.25}>
@@ -408,45 +401,42 @@ export function IssueDependencyGraph({
               Target: {targetProjectKey}. Directed arrows point from dependent issues to their blockers. Drag the canvas to pan; use the controls to zoom or fit.
             </Typography>
           </Box>
-          <Stack direction={{ xs: "column", sm: "row" }} sx={{ gap: 0.75, width: { xs: "100%", md: "auto" } }}>
-            <FormControl size="small" sx={{ width: { xs: "100%", sm: 330 }, maxWidth: "100%" }}>
-              <InputLabel>Visible projects</InputLabel>
-              <Select
-                multiple
-                value={graph.visibleProjects}
-                label="Visible projects"
-                onChange={(event) => {
-                  const raw = event.target.value;
-                  const next = typeof raw === "string" ? raw.split(",") : raw;
-                  setVisibleProjects(normalizeVisibleProjects(targetProjectKey, next, issues));
-                  setExpandedNodeId(null);
-                }}
-                renderValue={(selected) => (selected as string[]).join(", ")}
-                MenuProps={{ PaperProps: { sx: { maxHeight: 320 } } }}
-              >
-                {availableProjects.map((projectKey) => (
-                  <MenuItem key={projectKey} value={projectKey} disabled={projectKey === targetProjectKey}>
-                    <Checkbox checked={graph.visibleProjects.includes(projectKey)} disabled={projectKey === targetProjectKey} />
-                    <ListItemText
-                      primary={projectKey}
-                      secondary={projectKey === targetProjectKey ? "Target project" : undefined}
-                    />
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <Button
-              variant="outlined"
-              onClick={() => {
-                setVisibleProjects(defaultVisibleProjects(targetProjectKey, issues, dependencies));
-                setExpandedNodeId(null);
-              }}
-              sx={{ whiteSpace: "nowrap" }}
-            >
-              Target + related
-            </Button>
-          </Stack>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => {
+              setVisibleProjects(defaultVisibleProjects(targetProjectKey, issues, dependencies));
+              setExpandedNodeId(null);
+            }}
+            sx={{ alignSelf: { xs: "stretch", md: "flex-start" }, whiteSpace: "nowrap" }}
+          >
+            Target + related
+          </Button>
         </Stack>
+
+        <Box>
+          <Typography variant="overline" color="text.secondary">Visible projects</Typography>
+          <Stack direction="row" sx={{ gap: 0.6, flexWrap: "wrap" }}>
+            {availableProjects.map((projectKey) => {
+              const visible = graph.visibleProjects.includes(projectKey);
+              const target = projectKey === targetProjectKey;
+              return (
+                <Button
+                  key={projectKey}
+                  size="small"
+                  variant={visible ? "contained" : "outlined"}
+                  color={target ? "info" : "inherit"}
+                  disabled={target}
+                  aria-pressed={visible}
+                  onClick={() => toggleProject(projectKey)}
+                  sx={{ maxWidth: "100%", textTransform: "none", overflowWrap: "anywhere" }}
+                >
+                  {projectKey}{target ? " · target" : ""}
+                </Button>
+              );
+            })}
+          </Stack>
+        </Box>
 
         <Stack direction="row" sx={{ gap: 0.6, flexWrap: "wrap", alignItems: "center" }}>
           <Chip size="small" icon={<ErrorOutlineRounded />} label="Blocked" color="error" variant="outlined" />
@@ -482,7 +472,7 @@ export function IssueDependencyGraph({
           }}
         >
           <Stack
-            data-graph-control
+            data-graph-control="true"
             direction="row"
             sx={{
               position: "absolute",
@@ -531,17 +521,17 @@ export function IssueDependencyGraph({
               transition: isPanning ? "none" : "transform 120ms ease-out",
             }}
           >
-            <Box
-              component="svg"
+            <svg
               viewBox={`0 0 ${graph.width} ${graph.height}`}
               aria-hidden="true"
-              sx={{
+              style={{
                 position: "absolute",
-                inset: 0,
+                left: 0,
+                top: 0,
                 width: graph.width,
                 height: graph.height,
                 overflow: "visible",
-                color: "text.secondary",
+                color: "currentColor",
                 pointerEvents: "none",
                 zIndex: 1,
               }}
@@ -563,7 +553,7 @@ export function IssueDependencyGraph({
                   opacity={0.72}
                 />
               ))}
-            </Box>
+            </svg>
 
             {graph.nodes.map((node) => (
               <IssueGraphNodeCard
