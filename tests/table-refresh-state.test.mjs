@@ -199,7 +199,7 @@ test("client source keeps core Realtime row application while additive issue eve
   assert.match(transportSource, /agent-state-dashboard-issues/);
   assert.match(hookSource, /if \(isIssueTableName\(change\.table\)\)/);
   assert.match(hookSource, /void refreshIssueTable\(change\.table\)/);
-  assert.match(hookSource, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
+  assert.match(hookSource, /source\.readTable\(table, \{ signal: controller\.signal \}\)/);
   assert.match(hookSource, /pendingIssueRefreshesRef\.current\.add\(change\.table\)/);
   assert.match(hookSource, /applyRealtimeChangeToTableStates\(current, change\)/);
   assert.match(hookSource, /bufferedChangesRef\.current\.push\(change\)/);
