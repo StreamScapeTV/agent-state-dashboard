@@ -21,6 +21,21 @@ export interface CurrentProjectRecord {
   state: JsonValue;
 }
 
+export interface ProjectStoryIssueRef {
+  projectKey: string;
+  issueNumber: number;
+}
+
+export interface ProjectStory {
+  summary: string | null;
+  objective: string | null;
+  phase: string | null;
+  focusIssues: ProjectStoryIssueRef[];
+  relatedProjects: string[];
+  nextActions: string[];
+  ownerAttention: string | null;
+}
+
 export interface CurrentAssignment {
   instructions: string;
   context: JsonValue | null;
