@@ -368,10 +368,14 @@ test("progressive source contract keeps project-first UI and existing live/read-
     "readDashboardSnapshot(client, { signal: controller.signal })",
     "onChange: applyLiveChange",
     "applyRealtimeChangeToTableStates(current, change)",
+    "if (isIssueTableName(change.table))",
+    "void refreshIssueTable(change.table)",
+    "readDashboardTable(client, table, { signal: controller.signal })",
   ]) {
     assert.ok(hookSource.includes(marker), `missing live marker: ${marker}`);
   }
-  assert.equal(hookSource.includes("readDashboardTable("), false);
+  assert.equal(hookSource.includes("queueTableRefresh"), false);
+  assert.equal(hookSource.includes("INVALIDATION_DEBOUNCE_MS"), false);
 
   for (const marker of [
     "Choose a project to inspect its actors, blockers, and current work.",

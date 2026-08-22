@@ -19,9 +19,10 @@ This repository is a read-only visualization client for the separately owned `St
 - Never add, alter, migrate, seed, repair, reset, deploy, or otherwise mutate the Agent State Supabase project from this repository.
 - Application code must not call Agent State mutation RPCs, execute arbitrary SQL, expose a generic Supabase proxy, or provide a mutation UI.
 - Browser data access is only through the same-origin NGINX gateway rooted at `/supabase`.
-- The REST gateway may reach exactly these five current Agent State authority tables required by dashboard #4: `current_projects`, `current_agents`, `current_work`, `current_resources`, and `current_coordination`.
+- The REST gateway may reach exactly seven current Agent State dashboard tables: the established `current_projects`, `current_agents`, `current_work`, `current_resources`, and `current_coordination` tables plus additive `current_issues` and `current_issue_dependencies`.
+- The two additive issue tables use only the canonical unversioned contract frozen by `StreamScapeTV/agent-state-supabase#71`. During deployment ordering only, PostgREST `PGRST205` for either additive table is normalized to an empty dataset; core-table errors and auth/security/unexpected additive errors retain normal failure semantics. Do not add schema-version probes, alternate table names, aliases, or parallel models.
 - REST access is observation-only: only `GET`, `HEAD`, and `OPTIONS` are accepted. Mutation methods, arbitrary table paths, generic RPC paths, SQL, storage, functions, and other Supabase surfaces are outside the product boundary.
-- Realtime is exposed only through the exact same-origin WebSocket route `/supabase/realtime/v1/websocket` and is used for Postgres Changes invalidation of the same five current tables.
+- Realtime is exposed only through the exact same-origin WebSocket route `/supabase/realtime/v1/websocket` and is used for Postgres Changes on the same seven current tables. The established five-table channel remains the dashboard connection-health authority; additive issue-table rollout must not make core connectivity unhealthy merely because the new backend tables are not hosted yet.
 - `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are runtime-only server credentials supplied by the existing Kubernetes Secret. They must never use `NEXT_PUBLIC_*`, be committed, appear in generated static assets, be returned to the browser, be placed in query strings under browser control, or be logged.
 - NGINX owns upstream credential substitution. The browser may use only the non-secret client placeholder required by `@supabase/supabase-js`; the real upstream URL/key remain server-side.
 - The runtime entrypoint may render a secret-bearing NGINX configuration only into the ephemeral writable `/tmp` filesystem with restrictive permissions, then must unset the credential environment variables before starting NGINX.
@@ -101,7 +102,7 @@ The gateway is deliberately narrower than Supabase itself and is served only ove
 REST:
 
 - browser prefix: `/supabase/rest/v1/`;
-- allowed tables: exactly the five current authority tables listed above;
+- allowed tables: exactly `current_projects`, `current_agents`, `current_work`, `current_resources`, `current_coordination`, `current_issues`, and `current_issue_dependencies`;
 - methods: only `GET`, `HEAD`, and `OPTIONS`;
 - generic REST root or any other table path returns `404`;
 - mutation methods return `405`;
@@ -115,7 +116,7 @@ Realtime:
 - only a WebSocket `GET` is accepted;
 - NGINX owns the upstream API-key substitution and preserves only the bounded Realtime protocol parameters required by the client;
 - proxy buffering/cache stay disabled and long-lived read/write timeouts remain suitable for the subscription;
-- browser code uses Realtime only for invalidation/refresh of the five current tables and retains polling fallback for reconnect/staleness handling.
+- browser code uses Realtime current-row changes for the same seven tables and retains bounded polling/reconciliation for reconnect/staleness recovery; the two additive tables use a separate subscription channel during rollout so their absence does not downgrade the established five-table connection.
 
 Do not broaden either gateway surface merely because Supabase supports additional products or endpoints.
 
@@ -137,7 +138,7 @@ helm lint charts/agent-state-dashboard
 helm template agent-state-dashboard charts/agent-state-dashboard
 ```
 
-The package tests are authoritative for the current pure-NGINX boundary: build-time-only Node, pinned mandatory-TLS NGINX runtime, HTTPS-only listener, mounted TLS Secret contract, exact `/supabase` REST/Realtime proxy, Supabase Secret references, Tailscale metadata, probes/resources/security posture, source package/chart consistency, and the repository release caller.
+The package tests are authoritative for the current pure-NGINX boundary: build-time-only Node, pinned mandatory-TLS NGINX runtime, HTTPS-only listener, mounted TLS Secret contract, exact seven-table `/supabase` REST/Realtime proxy, Supabase Secret references, Tailscale metadata, probes/resources/security posture, source package/chart consistency, and the repository release caller.
 
 Documentation-only changes do not manufacture product-build, image, Helm, deployment, or live-cluster evidence. Runtime, integration, container, publication, deployment, and release evidence remain distinct product proofs tied to the exact source revision under test.
 

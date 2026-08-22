@@ -24,8 +24,8 @@ import {
   type ActivityKindFilter,
   type ActivityTableFilter,
 } from "@/lib/activity-log";
+import { DASHBOARD_TABLE_NAMES } from "@/lib/agent-state-read-contract";
 import type { DashboardActivityItem } from "@/lib/realtime-dashboard-state";
-import { RAW_TABLE_NAMES } from "@/types/dashboard";
 
 interface ActivityLogViewProps {
   activities: readonly DashboardActivityItem[];
@@ -141,7 +141,7 @@ export function ActivityLogView({ activities, projectScope }: ActivityLogViewPro
               onChange={(event) => setTable(event.target.value as ActivityTableFilter)}
             >
               <MenuItem value="all">All tables</MenuItem>
-              {RAW_TABLE_NAMES.map((value) => (
+              {DASHBOARD_TABLE_NAMES.map((value) => (
                 <MenuItem key={value} value={value}>{value.replace("current_", "")}</MenuItem>
               ))}
             </Select>

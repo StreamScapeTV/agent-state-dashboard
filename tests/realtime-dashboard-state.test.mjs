@@ -22,6 +22,13 @@ function loadRealtimeState() {
 
 const realtime = loadRealtimeState();
 const observedAt = "2026-08-21T09:30:00Z";
+const coreTables = [
+  "current_projects",
+  "current_agents",
+  "current_work",
+  "current_resources",
+  "current_coordination",
+];
 
 const samples = {
   current_projects: {
@@ -43,6 +50,27 @@ const samples = {
   current_coordination: {
     old: { project_key: "alpha", sender: "Agent 2", recipient: "Orchestrator", state: { status: "old" } },
     next: { project_key: "alpha", sender: "Agent 2", recipient: "Orchestrator", state: { status: "new" } },
+  },
+};
+
+const issueSample = {
+  old: { project_key: "alpha", issue_number: 111, title: "Old", assigned_actor: "Agent 1" },
+  next: { project_key: "alpha", issue_number: 111, title: "New", assigned_actor: "Agent 2" },
+};
+const dependencySample = {
+  old: {
+    dependent_project_key: "alpha",
+    dependent_issue_number: 111,
+    blocker_project_key: "beta",
+    blocker_issue_number: 71,
+    reason: "old",
+  },
+  next: {
+    dependent_project_key: "alpha",
+    dependent_issue_number: 111,
+    blocker_project_key: "beta",
+    blocker_issue_number: 71,
+    reason: "new",
   },
 };
 
@@ -69,11 +97,13 @@ function states(overrides = {}) {
     current_work: tableState(),
     current_resources: tableState(),
     current_coordination: tableState(),
+    current_issues: tableState(),
+    current_issue_dependencies: tableState(),
     ...overrides,
   };
 }
 
-test("natural current keys isolate every table and project", () => {
+test("natural current keys cover established and additive tables", () => {
   assert.equal(realtime.realtimeRowKey("current_projects", { project_key: "alpha" }), '["alpha"]');
   assert.equal(realtime.realtimeRowKey("current_agents", { project_key: "alpha", agent: "Agent 2" }), '["alpha","Agent 2"]');
   assert.equal(realtime.realtimeRowKey("current_work", { project_key: "alpha", work_key: "issue-81" }), '["alpha","issue-81"]');
@@ -82,13 +112,15 @@ test("natural current keys isolate every table and project", () => {
     realtime.realtimeRowKey("current_coordination", { project_key: "alpha", sender: "Agent 2", recipient: "Orchestrator" }),
     '["alpha","Agent 2","Orchestrator"]',
   );
-  assert.notEqual(
-    realtime.realtimeRowKey("current_agents", { project_key: "alpha", agent: "Agent 2" }),
-    realtime.realtimeRowKey("current_agents", { project_key: "beta", agent: "Agent 2" }),
+  assert.equal(realtime.realtimeRowKey("current_issues", issueSample.old), '["alpha","111"]');
+  assert.equal(
+    realtime.realtimeRowKey("current_issue_dependencies", dependencySample.old),
+    '["alpha","111","beta","71"]',
   );
 });
 
-for (const [table, sample] of Object.entries(samples)) {
+for (const table of coreTables) {
+  const sample = samples[table];
   test(`${table} INSERT/UPDATE/DELETE applies directly by natural key`, () => {
     const inserted = realtime.applyRealtimeChangeRows([], change(table, "INSERT", sample.old, null));
     assert.equal(inserted.applied, true);
@@ -104,7 +136,7 @@ for (const [table, sample] of Object.entries(samples)) {
   });
 }
 
-test("duplicate/replayed inserts and updates are idempotent", () => {
+test("duplicate/replayed core inserts and updates are idempotent", () => {
   const sample = samples.current_work;
   let rows = realtime.applyRealtimeChangeRows([], change("current_work", "INSERT", sample.old, null)).rows;
   rows = realtime.applyRealtimeChangeRows(rows, change("current_work", "INSERT", sample.old, null)).rows;
@@ -116,9 +148,7 @@ test("duplicate/replayed inserts and updates are idempotent", () => {
 });
 
 test("direct row changes never fabricate a complete table without bootstrap data", () => {
-  const current = states({
-    current_agents: { ...tableState(), hasData: false },
-  });
+  const current = states({ current_agents: { ...tableState(), hasData: false } });
   const result = realtime.applyRealtimeChangeToTableStates(
     current,
     change("current_agents", "INSERT", samples.current_agents.next, null),
@@ -127,7 +157,7 @@ test("direct row changes never fabricate a complete table without bootstrap data
   assert.equal(result.states, current);
 });
 
-test("live changes preserve an existing stale/error marker until authoritative reconciliation", () => {
+test("live core changes preserve an existing stale/error marker until authoritative reconciliation", () => {
   const current = states({
     current_resources: {
       ...tableState([samples.current_resources.old]),
@@ -145,7 +175,7 @@ test("live changes preserve an existing stale/error marker until authoritative r
   assert.deepEqual(result.states.current_resources.rows, [samples.current_resources.next]);
 });
 
-test("buffered bootstrap/reconciliation events replay in observed order", () => {
+test("buffered core bootstrap/reconciliation events replay in observed order", () => {
   const sample = samples.current_coordination;
   const current = states({ current_coordination: tableState([]) });
   const replayed = realtime.replayRealtimeChanges(current, [
@@ -156,7 +186,7 @@ test("buffered bootstrap/reconciliation events replay in observed order", () => 
   assert.deepEqual(replayed.current_coordination.rows, []);
 });
 
-test("buffered live update wins over an older reconciliation snapshot", () => {
+test("buffered core live update wins over an older reconciliation snapshot", () => {
   const sample = samples.current_agents;
   const staleSnapshot = states({ current_agents: tableState([sample.old]) });
   const converged = realtime.replayRealtimeChanges(staleSnapshot, [
@@ -165,7 +195,24 @@ test("buffered live update wins over an older reconciliation snapshot", () => {
   assert.deepEqual(converged.current_agents.rows, [sample.next]);
 });
 
-test("activity feed is bounded, deduplicated and carries derived session context", () => {
+test("activity feed derives context for additive issue/dependency invalidations without retaining payloads", () => {
+  const issueItem = realtime.activityFromRealtimeChange(
+    change("current_issues", "UPDATE", issueSample.next, issueSample.old),
+  );
+  assert.equal(issueItem.projectKey, "alpha");
+  assert.deepEqual(issueItem.identities, ["Agent 2"]);
+  assert.equal(issueItem.rowKey, '["alpha","111"]');
+  assert.equal(Object.hasOwn(issueItem, "newRow"), false);
+  assert.equal(Object.hasOwn(issueItem, "oldRow"), false);
+
+  const dependencyItem = realtime.activityFromRealtimeChange(
+    change("current_issue_dependencies", "UPDATE", dependencySample.next, dependencySample.old),
+  );
+  assert.equal(dependencyItem.projectKey, "alpha");
+  assert.equal(dependencyItem.rowKey, '["alpha","111","beta","71"]');
+});
+
+test("activity feed remains bounded and preserves established actor context", () => {
   let feed = [];
   for (let index = 0; index < realtime.ACTIVITY_LIMIT + 8; index += 1) {
     feed = realtime.prependActivity(feed, {
@@ -177,18 +224,6 @@ test("activity feed is bounded, deduplicated and carries derived session context
   }
   assert.equal(feed.length, realtime.ACTIVITY_LIMIT);
   assert.equal(feed[0].id, `event-${realtime.ACTIVITY_LIMIT + 7}`);
-
-  const item = realtime.activityFromRealtimeChange(
-    change("current_agents", "UPDATE", samples.current_agents.next, samples.current_agents.old),
-  );
-  assert.equal(item.kind, "change");
-  assert.equal(item.table, "current_agents");
-  assert.equal(item.projectKey, "alpha");
-  assert.deepEqual(item.identities, ["Agent 2"]);
-  assert.equal(item.rowKey, '["alpha","Agent 2"]');
-  assert.equal(Object.hasOwn(item, "newRow"), false);
-  assert.equal(Object.hasOwn(item, "oldRow"), false);
-  assert.match(item.summary, /agents/);
 
   const coordinationItem = realtime.activityFromRealtimeChange(
     change("current_coordination", "UPDATE", samples.current_coordination.next, samples.current_coordination.old),

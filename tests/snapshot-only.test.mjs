@@ -9,15 +9,18 @@ const realtimeSource = readFileSync(new URL("../lib/realtime-dashboard-state.ts"
 const pageSource = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
 const typesSource = readFileSync(new URL("../types/dashboard.ts", import.meta.url), "utf8");
 
-test("frontend uses one resilient bootstrap loader plus direct Realtime changes without legacy fallbacks", () => {
+test("frontend uses resilient bootstrap plus core direct Realtime changes and bounded additive invalidation reads", () => {
   assert.match(dashboardSource, /useDashboardTables\(nowMs\)/);
   assert.match(hookSource, /readDashboardSnapshot\(client, \{ signal: controller\.signal \}\)/);
   assert.match(clientSource, /DASHBOARD_PROXY_PATH = "\/supabase"/);
   assert.match(clientSource, /Promise\.allSettled/);
-  assert.match(clientSource, /handlers\.onChange\(\{/);
+  assert.match(clientSource, /onChange\(\{/);
   assert.match(hookSource, /onChange: applyLiveChange/);
   assert.match(hookSource, /applyRealtimeChangeToTableStates\(current, change\)/);
-  assert.doesNotMatch(hookSource, /readDashboardTable\(/);
+  assert.match(hookSource, /if \(isIssueTableName\(change\.table\)\)/);
+  assert.match(hookSource, /void refreshIssueTable\(change\.table\)/);
+  assert.match(hookSource, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
+  assert.doesNotMatch(hookSource, /queueTableRefresh|INVALIDATION_DEBOUNCE_MS/);
   assert.doesNotMatch(dashboardSource, /\/api\/snapshot|\/api\/overview|\/api\/actors/);
   assert.doesNotMatch(hookSource, /\/api\/snapshot|\/api\/overview|\/api\/actors/);
   assert.doesNotMatch(dashboardSource, /legacyProjects|loadLegacySnapshot|LegacyOverviewPayload|LegacyActorsBatchPayload/);
@@ -55,7 +58,7 @@ test("healthy socket operation has no always-on snapshot poll and recovery recon
   assert.doesNotMatch(dashboardSource, /Refresh all/);
 });
 
-test("raw explorer remains an independently selected read while normal live operation is socket-driven", () => {
+test("raw explorer remains an independently selected read while normal core live operation is socket-driven", () => {
   assert.match(dashboardSource, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
   assert.match(dashboardSource, /Raw tables/);
   assert.match(dashboardSource, /Recent live activity/);

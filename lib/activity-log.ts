@@ -1,11 +1,11 @@
+import type { DashboardTableName } from "@/lib/agent-state-read-contract";
 import type {
   DashboardActivityItem,
   DashboardRealtimeEventType,
 } from "@/lib/realtime-dashboard-state";
-import type { RawTableName } from "@/types/dashboard";
 
 export type ActivityKindFilter = "all" | DashboardActivityItem["kind"];
-export type ActivityTableFilter = "all" | RawTableName;
+export type ActivityTableFilter = "all" | DashboardTableName;
 export type ActivityEventFilter = "all" | DashboardRealtimeEventType;
 
 export interface ActivityLogFilters {
