@@ -43,6 +43,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityLogView } from "@/components/ActivityLogView";
 import { AttentionInbox } from "@/components/AttentionInbox";
 import { CoordinationBoard } from "@/components/CoordinationBoard";
+import { IssueDependencyGraph } from "@/components/IssueDependencyGraph";
 import { ProjectOverview } from "@/components/ProjectOverview";
 import { ResourcesCapacityBoard } from "@/components/ResourcesCapacityBoard";
 import { WorkAssignmentBoard } from "@/components/WorkAssignmentBoard";
@@ -420,6 +421,8 @@ export function DashboardClient() {
   const {
     tableStates,
     snapshot,
+    issues,
+    issueDependencies,
     connectionState,
     freshness,
     lastRefresh,
@@ -581,6 +584,14 @@ export function DashboardClient() {
             onSelectStatus={setSelectedStatus}
             onView={setSelectedAgentKey}
           />
+
+          {selectedProjectKey !== "all" ? (
+            <IssueDependencyGraph
+              issues={issues}
+              dependencies={issueDependencies}
+              targetProjectKey={selectedProjectKey}
+            />
+          ) : null}
 
           {selectedProjectKey !== "all" ? (
             <Paper variant="outlined" sx={{ mt: 1.5, overflow: "hidden" }}>
