@@ -170,6 +170,10 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
           : "Agent State reconciliation is partial",
       ));
 
+      // The full snapshot has now been applied. Clear the guard before flushing
+      // additive invalidations so any event arriving from this point onward gets
+      // its own bounded table refresh rather than becoming stranded in the set.
+      reconcilingRef.current = false;
       const pendingIssueTables = [...pendingIssueRefreshesRef.current];
       pendingIssueRefreshesRef.current.clear();
       for (const table of pendingIssueTables) void refreshIssueTable(table);
