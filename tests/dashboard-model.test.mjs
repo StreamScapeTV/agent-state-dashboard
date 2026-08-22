@@ -364,13 +364,13 @@ test("progressive source contract keeps project-first UI and existing live/read-
   assert.equal(source.includes("Refresh all"), false);
 
   for (const marker of [
-    "subscribeToDashboardChanges(client, {",
-    "readDashboardSnapshot(client, { signal: controller.signal })",
+    "source.subscribe({",
+    "source.readSnapshot({ signal: controller.signal })",
     "onChange: applyLiveChange",
     "applyRealtimeChangeToTableStates(current, change)",
     "if (isIssueTableName(change.table))",
     "void refreshIssueTable(change.table)",
-    "readDashboardTable(client, table, { signal: controller.signal })",
+    "source.readTable(table, { signal: controller.signal })",
   ]) {
     assert.ok(hookSource.includes(marker), `missing live marker: ${marker}`);
   }
