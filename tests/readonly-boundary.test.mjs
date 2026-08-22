@@ -51,7 +51,7 @@ test("Realtime keeps established row application and additive issue invalidation
   assert.match(clientSource, /client\.channel\("agent-state-dashboard-issues"\)/);
   assert.match(clientSource, /"postgres_changes"/);
   assert.match(clientSource, /\{ event: "\*", schema: AGENT_STATE_SCHEMA, table \}/);
-  assert.match(clientSource, /handlers\.onChange\(\{/);
+  assert.match(clientSource, /onChange\(\{/);
   assert.match(clientSource, /newRow: asRecord\(payload\?\.new\)/);
   assert.match(clientSource, /oldRow: asRecord\(payload\?\.old\)/);
   assert.match(hookSource, /if \(isIssueTableName\(change\.table\)\)/);
