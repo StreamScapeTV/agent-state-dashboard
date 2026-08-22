@@ -32,9 +32,11 @@ import {
   formatDuration,
   statusLabel,
 } from "@/lib/dashboard-model";
+import { parseProjectStory } from "@/lib/project-story";
 import type {
   AgentStatusFilter,
   AgentViewRow,
+  ProjectStory,
   ProjectSummary,
 } from "@/types/dashboard";
 
@@ -85,6 +87,83 @@ function projectHealthCue(summary: ProjectSummary): string | null {
   return null;
 }
 
+function storyPrimaryText(story: ProjectStory | null): string | null {
+  return story?.summary ?? story?.objective ?? null;
+}
+
+function StoryDetails({ story }: { story: ProjectStory }) {
+  const hasReferences = story.focusIssues.length > 0 || story.relatedProjects.length > 0;
+  return (
+    <Paper variant="outlined" sx={{ p: { xs: 1.25, sm: 1.5, md: 2 } }}>
+      <Stack spacing={1.5}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="overline" color="text.secondary">Current story</Typography>
+          {story.summary ? (
+            <Typography variant="h6" sx={{ overflowWrap: "anywhere" }}>{story.summary}</Typography>
+          ) : null}
+          {story.objective ? (
+            <Typography
+              variant="body1"
+              color={story.summary ? "text.secondary" : "text.primary"}
+              sx={{ mt: story.summary ? 0.5 : 0, overflowWrap: "anywhere" }}
+            >
+              {story.objective}
+            </Typography>
+          ) : null}
+        </Box>
+
+        {story.ownerAttention ? (
+          <Alert severity="info" variant="outlined">
+            <Typography variant="overline">Owner attention</Typography>
+            <Typography variant="body2" sx={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
+              {story.ownerAttention}
+            </Typography>
+          </Alert>
+        ) : null}
+
+        {story.nextActions.length > 0 ? (
+          <Box>
+            <Typography variant="overline" color="text.secondary">Next actions</Typography>
+            <Stack spacing={0.65}>
+              {story.nextActions.map((action) => (
+                <Typography key={action} variant="body2" sx={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
+                  {action}
+                </Typography>
+              ))}
+            </Stack>
+          </Box>
+        ) : null}
+
+        {hasReferences ? (
+          <Stack spacing={0.75}>
+            {story.focusIssues.length > 0 ? (
+              <Stack direction="row" sx={{ gap: 0.6, flexWrap: "wrap", alignItems: "center" }}>
+                <Typography variant="overline" color="text.secondary">Focus issues</Typography>
+                {story.focusIssues.map((issue) => (
+                  <Chip
+                    key={`${issue.projectKey}#${issue.issueNumber}`}
+                    size="small"
+                    variant="outlined"
+                    label={`${issue.projectKey}#${issue.issueNumber}`}
+                  />
+                ))}
+              </Stack>
+            ) : null}
+            {story.relatedProjects.length > 0 ? (
+              <Stack direction="row" sx={{ gap: 0.6, flexWrap: "wrap", alignItems: "center" }}>
+                <Typography variant="overline" color="text.secondary">Related projects</Typography>
+                {story.relatedProjects.map((projectKey) => (
+                  <Chip key={projectKey} size="small" variant="outlined" label={projectKey} />
+                ))}
+              </Stack>
+            ) : null}
+          </Stack>
+        ) : null}
+      </Stack>
+    </Paper>
+  );
+}
+
 function AllProjectsLanding({
   projects,
   rows,
@@ -123,15 +202,17 @@ function AllProjectsLanding({
         >
           {projects.map((summary) => {
             const cue = projectHealthCue(summary);
+            const story = parseProjectStory(summary.state);
+            const primaryText = storyPrimaryText(story);
             return (
               <Card key={summary.projectKey} variant="outlined" sx={{ minWidth: 0 }}>
                 <CardActionArea
                   onClick={() => onSelectProject(summary.projectKey)}
                   aria-label={`Open ${summary.projectKey}`}
-                  sx={{ height: "100%", minHeight: { xs: 168, sm: 176 }, alignItems: "stretch" }}
+                  sx={{ height: "100%", minHeight: { xs: 154, sm: 164 }, alignItems: "stretch" }}
                 >
                   <CardContent sx={{ height: "100%", p: { xs: 1.5, sm: 2 } }}>
-                    <Stack spacing={1.25} sx={{ height: "100%" }}>
+                    <Stack spacing={1.1} sx={{ height: "100%" }}>
                       <Stack
                         direction={{ xs: "column", sm: "row" }}
                         sx={{ justifyContent: "space-between", gap: 0.75, alignItems: { sm: "center" } }}
@@ -139,27 +220,31 @@ function AllProjectsLanding({
                         <Typography variant="h6" sx={{ minWidth: 0, overflowWrap: "anywhere" }}>
                           {summary.projectKey}
                         </Typography>
-                        {summary.phase ? (
-                          <Chip size="small" label={summary.phase} variant="outlined" sx={{ alignSelf: "flex-start" }} />
+                        {story?.phase ? (
+                          <Chip size="small" label={story.phase} variant="outlined" sx={{ alignSelf: "flex-start" }} />
                         ) : null}
                       </Stack>
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{
-                          minHeight: 40,
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                          overflowWrap: "anywhere",
-                        }}
-                      >
-                        {summary.objective ?? "No current objective recorded."}
-                      </Typography>
-                      {summary.nextAction ? (
+
+                      {primaryText ? (
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{
+                            display: "-webkit-box",
+                            WebkitLineClamp: 3,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                            overflowWrap: "anywhere",
+                          }}
+                        >
+                          {primaryText}
+                        </Typography>
+                      ) : null}
+
+                      {story?.ownerAttention ? (
                         <Typography
                           variant="caption"
+                          color="info.main"
                           sx={{
                             display: "-webkit-box",
                             WebkitLineClamp: 2,
@@ -168,9 +253,10 @@ function AllProjectsLanding({
                             overflowWrap: "anywhere",
                           }}
                         >
-                          Next: {summary.nextAction}
+                          Owner attention · {story.ownerAttention}
                         </Typography>
                       ) : null}
+
                       <Stack direction="row" sx={{ gap: 0.6, flexWrap: "wrap", mt: "auto" }}>
                         <Chip size="small" label={`${summary.total} agents`} />
                         <Chip size="small" label={`${summary.working} working`} color={summary.working > 0 ? "info" : "default"} variant="outlined" />
@@ -232,6 +318,7 @@ function SelectedProjectOverview({
     );
   }
 
+  const story = parseProjectStory(summary.state);
   const cards: StatusCard[] = [
     { value: "all", label: "Agents", count: summary.total, icon: <PeopleAltRounded />, color: "default" },
     { value: "working", label: "Working", count: summary.working, icon: <HourglassTopRounded />, color: "info" },
@@ -239,7 +326,6 @@ function SelectedProjectOverview({
     { value: "returned", label: "Returned", count: summary.returned, icon: <CheckCircleRounded />, color: "success" },
     { value: "idle", label: "Idle", count: summary.idle, icon: <PauseCircleRounded />, color: "default" },
   ];
-
   const selectedLabel = cards.find((card) => card.value === selectedStatus)?.label ?? "Agents";
 
   return (
@@ -261,16 +347,8 @@ function SelectedProjectOverview({
                 >
                   {summary.projectKey}
                 </Typography>
-                {summary.phase ? <Chip label={summary.phase} size="small" variant="outlined" /> : null}
+                {story?.phase ? <Chip label={story.phase} size="small" variant="outlined" /> : null}
               </Stack>
-              <Typography variant="body1" sx={{ mt: 0.75, overflowWrap: "anywhere" }}>
-                {summary.objective ?? "No current objective recorded."}
-              </Typography>
-              {summary.nextAction ? (
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, overflowWrap: "anywhere" }}>
-                  Next: {summary.nextAction}
-                </Typography>
-              ) : null}
             </Box>
             {(summary.blocked > 0 || summary.returned > 0) ? (
               <Stack direction="row" sx={{ gap: 0.75, flexWrap: "wrap" }}>
@@ -319,6 +397,8 @@ function SelectedProjectOverview({
           </Box>
         </Stack>
       </Paper>
+
+      {story ? <StoryDetails story={story} /> : null}
 
       <Paper variant="outlined" sx={{ overflow: "hidden" }}>
         <Stack
@@ -385,9 +465,11 @@ function SelectedProjectOverview({
                     ) : null}
                   </Box>
                   <Typography variant="caption" color="text.secondary">{ageLabel(row, nowMs)}</Typography>
-                  <Typography variant="caption" sx={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
-                    Next: {row.nextAction ?? "—"}
-                  </Typography>
+                  {row.nextAction ? (
+                    <Typography variant="caption" sx={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                      Next: {row.nextAction}
+                    </Typography>
+                  ) : <Box />}
                 </Box>
               </AccordionSummary>
               <AccordionDetails sx={{ pt: 0, px: { xs: 1.25, sm: 2 }, pb: { xs: 1.5, sm: 2 } }} id={`${row.key}-details`}>
@@ -421,12 +503,14 @@ function SelectedProjectOverview({
                     <Chip size="small" label={`${row.coordination.length} coordination`} variant="outlined" />
                   </Stack>
 
-                  <Box>
-                    <Typography variant="overline">Next action</Typography>
-                    <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
-                      {row.nextAction ?? "No current next action recorded."}
-                    </Typography>
-                  </Box>
+                  {row.nextAction ? (
+                    <Box>
+                      <Typography variant="overline">Next action</Typography>
+                      <Typography variant="body2" sx={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
+                        {row.nextAction}
+                      </Typography>
+                    </Box>
+                  ) : null}
 
                   <Box>
                     <Button
