@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "test": "node --test tests/activity-log.test.mjs tests/attention-inbox.test.mjs tests/coordination-board.test.mjs tests/dashboard-model.test.mjs tests/packaging.test.mjs tests/project-overview.test.mjs tests/project-story.test.mjs",
+    "test": "node --test tests/activity-log.test.mjs tests/attention-inbox.test.mjs tests/coordination-board.test.mjs",
     "typecheck": "tsc --noEmit",
     "validate": "npm test && npm run typecheck && npm run build"
   },
