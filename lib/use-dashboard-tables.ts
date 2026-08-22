@@ -10,13 +10,9 @@ import {
 } from "@/lib/agent-state-read-contract";
 import { normalizeSnapshot } from "@/lib/dashboard-model";
 import {
-  DASHBOARD_TABLES,
-  getDashboardSupabaseClient,
-  isMissingAdditiveTableError,
-  readDashboardSnapshot,
-  readDashboardTable,
-  subscribeToDashboardChanges,
-} from "@/lib/dashboard-supabase";
+  DASHBOARD_READ_TABLES,
+  getDashboardReadSource,
+} from "@/lib/dashboard-read-source";
 import {
   activityFromRealtimeChange,
   applyRealtimeChangeToTableStates,
@@ -113,19 +109,14 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
     setTableStates((current) => beginTableRead(current, table, requestId));
 
     try {
-      const client = getDashboardSupabaseClient();
-      const rows = await readDashboardTable(client, table, { signal: controller.signal });
+      const source = getDashboardReadSource();
+      const rows = await source.readTable(table, { signal: controller.signal });
       if (controller.signal.aborted) return false;
       const successAt = new Date().toISOString();
       setTableStates((current) => completeTableRead(current, table, requestId, rows, successAt));
       return true;
     } catch (caught) {
       if (controller.signal.aborted) return false;
-      if (isMissingAdditiveTableError(caught, table)) {
-        const successAt = new Date().toISOString();
-        setTableStates((current) => completeTableRead(current, table, requestId, [], successAt));
-        return true;
-      }
       const message = caught instanceof Error ? caught.message : `Dashboard read failed for ${table}`;
       setTableStates((current) => failTableRead(current, table, requestId, message));
       return false;
@@ -143,12 +134,12 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
     reconcilingRef.current = true;
 
     if (reason !== "bootstrap") setConnectionState("recovering");
-    const requestIds = nextIdsFor(requestSequenceRef, DASHBOARD_TABLES);
+    const requestIds = nextIdsFor(requestSequenceRef, DASHBOARD_READ_TABLES);
     setTableStates((current) => beginTableReads(current, requestIds));
 
     try {
-      const client = getDashboardSupabaseClient();
-      const rawSnapshot = await readDashboardSnapshot(client, { signal: controller.signal });
+      const source = getDashboardReadSource();
+      const rawSnapshot = await source.readSnapshot({ signal: controller.signal });
       if (controller.signal.aborted) return false;
 
       const replay = bufferedChangesRef.current;
@@ -183,7 +174,7 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
       const message = caught instanceof Error ? caught.message : "Dashboard snapshot could not be loaded.";
       setTableStates((current) => {
         let next = current;
-        for (const table of DASHBOARD_TABLES) {
+        for (const table of DASHBOARD_READ_TABLES) {
           next = failTableRead(next, table, requestIds[table], message);
         }
         return next;
@@ -225,7 +216,7 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
   }, [appendActivity, refreshIssueTable, requestFullRefresh]);
 
   useEffect(() => {
-    const client = getDashboardSupabaseClient();
+    const source = getDashboardReadSource();
     let bootstrapTimer: number | null = null;
 
     const startBootstrap = (socketReadyAtStart: boolean) => {
@@ -245,7 +236,7 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
       });
     };
 
-    const unsubscribe = subscribeToDashboardChanges(client, {
+    const unsubscribe = source.subscribe({
       onStatus: (status) => {
         const observedAt = new Date().toISOString();
         if (status === "connecting") {

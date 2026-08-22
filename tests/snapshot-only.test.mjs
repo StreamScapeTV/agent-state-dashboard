@@ -11,7 +11,7 @@ const typesSource = readFileSync(new URL("../types/dashboard.ts", import.meta.ur
 
 test("frontend uses resilient bootstrap plus core direct Realtime changes and bounded additive invalidation reads", () => {
   assert.match(dashboardSource, /useDashboardTables\(nowMs\)/);
-  assert.match(hookSource, /readDashboardSnapshot\(client, \{ signal: controller\.signal \}\)/);
+  assert.match(hookSource, /source\.readSnapshot\(\{ signal: controller\.signal \}\)/);
   assert.match(clientSource, /DASHBOARD_PROXY_PATH = "\/supabase"/);
   assert.match(clientSource, /Promise\.allSettled/);
   assert.match(clientSource, /onChange\(\{/);
@@ -19,7 +19,7 @@ test("frontend uses resilient bootstrap plus core direct Realtime changes and bo
   assert.match(hookSource, /applyRealtimeChangeToTableStates\(current, change\)/);
   assert.match(hookSource, /if \(isIssueTableName\(change\.table\)\)/);
   assert.match(hookSource, /void refreshIssueTable\(change\.table\)/);
-  assert.match(hookSource, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
+  assert.match(hookSource, /source\.readTable\(table, \{ signal: controller\.signal \}\)/);
   assert.doesNotMatch(hookSource, /queueTableRefresh|INVALIDATION_DEBOUNCE_MS/);
   assert.doesNotMatch(dashboardSource, /\/api\/snapshot|\/api\/overview|\/api\/actors/);
   assert.doesNotMatch(hookSource, /\/api\/snapshot|\/api\/overview|\/api\/actors/);
@@ -36,7 +36,7 @@ test("retired legacy payload types are removed", () => {
 });
 
 test("subscription is registered before bootstrap and slow subscription receives a post-bootstrap reconcile", () => {
-  assert.match(hookSource, /const unsubscribe = subscribeToDashboardChanges\(client, \{/);
+  assert.match(hookSource, /const unsubscribe = source\.subscribe\(\{/);
   assert.match(hookSource, /Realtime subscribed; bootstrapping/);
   assert.match(hookSource, /startBootstrap\(true\)/);
   assert.match(hookSource, /BOOTSTRAP_SUBSCRIBE_GRACE_MS = 750/);
@@ -58,11 +58,13 @@ test("healthy socket operation has no always-on snapshot poll and recovery recon
   assert.doesNotMatch(dashboardSource, /Refresh all/);
 });
 
-test("raw explorer remains an independently selected read while normal core live operation is socket-driven", () => {
+test("raw explorer remains an independently selected read while normal core live operation is source-driven", () => {
   assert.match(dashboardSource, /readDashboardTable\(client, table, \{ signal: controller\.signal \}\)/);
   assert.match(dashboardSource, /Raw tables/);
   assert.match(dashboardSource, /Recent live activity/);
   assert.match(dashboardSource, /Live details/);
+  assert.match(hookSource, /from "@\/lib\/dashboard-read-source"/);
+  assert.doesNotMatch(hookSource, /getDashboardSupabaseClient|readDashboardSnapshot|readDashboardTable|subscribeToDashboardChanges/);
   assert.doesNotMatch(dashboardSource, /new EventSource\(|["']\/events["']|\/api\/tables/);
   assert.doesNotMatch(hookSource, /new EventSource\(|["']\/events["']|\/api\/tables/);
 });
