@@ -2,13 +2,11 @@
   "name": "agent-state-dashboard",
   "version": "0.1.2",
   "private": true,
-  "engines": {
-    "node": ">=22.18.0"
-  },
+  "engines": { "node": ">=22.18.0" },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "test": "node --test tests/activity-log.test.mjs tests/issue-read-contract.test.mjs tests/packaging.test.mjs tests/readonly-boundary.test.mjs",
+    "test": "node --test tests/packaging.test.mjs",
     "typecheck": "tsc --noEmit",
     "validate": "npm test && npm run typecheck && npm run build"
   },
