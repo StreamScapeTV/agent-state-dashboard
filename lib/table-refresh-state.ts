@@ -1,3 +1,7 @@
+import {
+  DASHBOARD_TABLE_NAMES,
+  type DashboardTableName,
+} from "@/lib/agent-state-read-contract";
 import { RAW_TABLE_NAMES, type RawTableName } from "@/types/dashboard";
 
 export interface TableReadState {
@@ -10,13 +14,13 @@ export interface TableReadState {
   requestId: number;
 }
 
-export type TableReadStates = Record<RawTableName, TableReadState>;
-export type TableRequestIds = Record<RawTableName, number>;
+export type TableReadStates = Record<DashboardTableName, TableReadState>;
+export type TableRequestIds = Record<DashboardTableName, number>;
 export type DashboardFreshness = "loading" | "fresh" | "partial" | "stale";
 
 export interface PartialTableSnapshot {
-  tables: Partial<Record<RawTableName, unknown[]>>;
-  errors: Partial<Record<RawTableName, string>>;
+  tables: Partial<Record<DashboardTableName, unknown[]>>;
+  errors: Partial<Record<DashboardTableName, string>>;
 }
 
 function initialTableState(): TableReadState {
@@ -33,13 +37,13 @@ function initialTableState(): TableReadState {
 
 export function createTableReadStates(): TableReadStates {
   return Object.fromEntries(
-    RAW_TABLE_NAMES.map((table) => [table, initialTableState()]),
+    DASHBOARD_TABLE_NAMES.map((table) => [table, initialTableState()]),
   ) as TableReadStates;
 }
 
 export function beginTableRead(
   states: TableReadStates,
-  table: RawTableName,
+  table: DashboardTableName,
   requestId: number,
 ): TableReadStates {
   if (requestId <= states[table].requestId) return states;
@@ -59,7 +63,7 @@ export function beginTableReads(
   requestIds: TableRequestIds,
 ): TableReadStates {
   let next = states;
-  for (const table of RAW_TABLE_NAMES) {
+  for (const table of DASHBOARD_TABLE_NAMES) {
     next = beginTableRead(next, table, requestIds[table]);
   }
   return next;
@@ -67,7 +71,7 @@ export function beginTableReads(
 
 export function completeTableRead(
   states: TableReadStates,
-  table: RawTableName,
+  table: DashboardTableName,
   requestId: number,
   rows: unknown[],
   successAt: string,
@@ -89,7 +93,7 @@ export function completeTableRead(
 
 export function failTableRead(
   states: TableReadStates,
-  table: RawTableName,
+  table: DashboardTableName,
   requestId: number,
   error: string,
 ): TableReadStates {
@@ -113,7 +117,7 @@ export function applyPartialSnapshot(
   successAt: string,
 ): TableReadStates {
   let next = states;
-  for (const table of RAW_TABLE_NAMES) {
+  for (const table of DASHBOARD_TABLE_NAMES) {
     if (Object.prototype.hasOwnProperty.call(snapshot.tables, table)) {
       next = completeTableRead(
         next,
@@ -145,16 +149,19 @@ export function snapshotInputFromTableStates(
 }
 
 export function hasAnyTableData(states: TableReadStates): boolean {
+  // Preserve the established UI/bootstrap meaning: the current dashboard has
+  // usable data only when at least one of the original five authority tables
+  // has data. Additive issue tables never manufacture a core snapshot.
   return RAW_TABLE_NAMES.some((table) => states[table].hasData);
 }
 
 export function hasAnyTableLoading(states: TableReadStates): boolean {
-  return RAW_TABLE_NAMES.some((table) => states[table].loading);
+  return DASHBOARD_TABLE_NAMES.some((table) => states[table].loading);
 }
 
 export function latestTableSuccessAt(states: TableReadStates): string | null {
   let latest: { value: string; timestamp: number } | null = null;
-  for (const table of RAW_TABLE_NAMES) {
+  for (const table of DASHBOARD_TABLE_NAMES) {
     const value = states[table].lastSuccessAt;
     if (!value) continue;
     const timestamp = Date.parse(value);
@@ -169,8 +176,8 @@ export function dashboardFreshness(
   nowMs: number,
   staleAfterMs: number,
 ): DashboardFreshness {
-  const values = RAW_TABLE_NAMES.map((table) => states[table]);
-  if (!values.some((state) => state.hasData)) {
+  const values = DASHBOARD_TABLE_NAMES.map((table) => states[table]);
+  if (!RAW_TABLE_NAMES.some((table) => states[table].hasData)) {
     if (values.some((state) => state.error)) return "partial";
     return "loading";
   }
@@ -199,8 +206,8 @@ export function tableHealthLabel(
   return "fresh";
 }
 
-export function tableIssues(states: TableReadStates): RawTableName[] {
-  return RAW_TABLE_NAMES.filter((table) => {
+export function tableIssues(states: TableReadStates): DashboardTableName[] {
+  return DASHBOARD_TABLE_NAMES.filter((table) => {
     const state = states[table];
     return state.requestId > 0
       && !state.loading
@@ -210,7 +217,7 @@ export function tableIssues(states: TableReadStates): RawTableName[] {
 
 export function nextRequestIds(
   current: TableRequestIds,
-  tables: readonly RawTableName[],
+  tables: readonly DashboardTableName[],
 ): TableRequestIds {
   const next = { ...current };
   for (const table of tables) next[table] += 1;
@@ -218,5 +225,5 @@ export function nextRequestIds(
 }
 
 export function createRequestIds(): TableRequestIds {
-  return Object.fromEntries(RAW_TABLE_NAMES.map((table) => [table, 0])) as TableRequestIds;
+  return Object.fromEntries(DASHBOARD_TABLE_NAMES.map((table) => [table, 0])) as TableRequestIds;
 }

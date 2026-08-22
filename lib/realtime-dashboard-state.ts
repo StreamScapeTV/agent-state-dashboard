@@ -1,10 +1,10 @@
-import type { RawTableName } from "@/types/dashboard";
+import type { DashboardTableName } from "@/lib/agent-state-read-contract";
 import type { TableReadStates } from "@/lib/table-refresh-state";
 
 export type DashboardRealtimeEventType = "INSERT" | "UPDATE" | "DELETE";
 
 export interface DashboardRealtimeChange {
-  table: RawTableName;
+  table: DashboardTableName;
   eventType: DashboardRealtimeEventType;
   newRow: Record<string, unknown> | null;
   oldRow: Record<string, unknown> | null;
@@ -16,7 +16,7 @@ export interface DashboardActivityItem {
   observedAt: string;
   kind: "change" | "connection" | "reconcile";
   summary: string;
-  table?: RawTableName;
+  table?: DashboardTableName;
   eventType?: DashboardRealtimeEventType;
   projectKey?: string;
   identities?: string[];
@@ -25,12 +25,19 @@ export interface DashboardActivityItem {
 
 export const ACTIVITY_LIMIT = 50;
 
-const TABLE_KEY_FIELDS: Record<RawTableName, readonly string[]> = {
+const TABLE_KEY_FIELDS: Record<DashboardTableName, readonly string[]> = {
   current_projects: ["project_key"],
   current_agents: ["project_key", "agent"],
   current_work: ["project_key", "work_key"],
   current_resources: ["project_key", "resource_key"],
   current_coordination: ["project_key", "sender", "recipient"],
+  current_issues: ["project_key", "issue_number"],
+  current_issue_dependencies: [
+    "dependent_project_key",
+    "dependent_issue_number",
+    "blocker_project_key",
+    "blocker_issue_number",
+  ],
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -57,11 +64,16 @@ function activityIdentities(row: Record<string, unknown> | null): string[] {
     stringField(row, "agent"),
     stringField(row, "sender"),
     stringField(row, "recipient"),
+    stringField(row, "assigned_actor"),
   ].filter((value): value is string => value !== null);
   return [...new Set(identities)];
 }
 
-export function realtimeRowKey(table: RawTableName, value: unknown): string | null {
+function activityProjectKey(row: Record<string, unknown> | null): string | null {
+  return stringField(row, "project_key") ?? stringField(row, "dependent_project_key");
+}
+
+export function realtimeRowKey(table: DashboardTableName, value: unknown): string | null {
   const row = asRecord(value);
   if (!row) return null;
   const parts: string[] = [];
@@ -75,7 +87,7 @@ export function realtimeRowKey(table: RawTableName, value: unknown): string | nu
   return JSON.stringify(parts);
 }
 
-function sortedRows(table: RawTableName, rows: unknown[]): unknown[] {
+function sortedRows(table: DashboardTableName, rows: unknown[]): unknown[] {
   return [...rows].sort((left, right) => {
     const leftKey = realtimeRowKey(table, left) ?? "";
     const rightKey = realtimeRowKey(table, right) ?? "";
@@ -172,7 +184,7 @@ export function activityFromRealtimeChange(change: DashboardRealtimeChange): Das
     : change.eventType === "DELETE"
       ? "removed"
       : "updated";
-  const projectKey = stringField(row, "project_key");
+  const projectKey = activityProjectKey(row);
   const identities = activityIdentities(row);
   return {
     id: activityId(change.observedAt, `${change.table}:${change.eventType}:${rowKey ?? "unknown"}`),

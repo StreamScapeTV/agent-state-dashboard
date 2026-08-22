@@ -105,7 +105,7 @@ test("static build identity rotates with the release version before immutable ca
   assert.doesNotMatch(nextConfigSource, /agent-state-dashboard-static/);
 });
 
-test("NGINX terminates mandatory TLS and exposes only the five-table gateway plus Realtime and static UI", () => {
+test("NGINX terminates mandatory TLS and exposes only the seven-table gateway plus Realtime and static UI", () => {
   assert.match(nginx, /^worker_processes 1;$/m);
   assert.match(nginx, /listen 8443 ssl;/);
   assert.match(nginx, /listen \[::\]:8443 ssl;/);
@@ -121,11 +121,11 @@ test("NGINX terminates mandatory TLS and exposes only the five-table gateway plu
   assert.match(nginx, /proxy_ssl_trusted_certificate \/etc\/ssl\/certs\/ca-certificates\.crt/);
   assert.match(
     nginx,
-    /location ~ \^\/supabase\/rest\/v1\/\(current_projects\|current_agents\|current_work\|current_resources\|current_coordination\)\/\?\$/,
+    /location ~ \^\/supabase\/rest\/v1\/\(current_projects\|current_agents\|current_work\|current_resources\|current_coordination\|current_issues\|current_issue_dependencies\)\/\?\$/,
   );
   assert.match(nginx, /\$request_method !~ \^\(GET\|HEAD\|OPTIONS\)\$/);
   assert.match(nginx, /if \(\$arg_apikey != ''\)/);
-  assert.match(nginx, /rewrite \^\/supabase\/rest\/v1\/\(current_projects\|current_agents\|current_work\|current_resources\|current_coordination\)\/\?\$ \/rest\/v1\/\$1 break/);
+  assert.match(nginx, /rewrite \^\/supabase\/rest\/v1\/\(current_projects\|current_agents\|current_work\|current_resources\|current_coordination\|current_issues\|current_issue_dependencies\)\/\?\$ \/rest\/v1\/\$1 break/);
   assert.match(nginx, /proxy_set_header apikey "\$\{SUPABASE_SECRET_KEY\}"/);
   assert.match(nginx, /proxy_set_header Authorization ""/);
   assert.match(nginx, /proxy_set_header X-HTTP-Method-Override ""/);

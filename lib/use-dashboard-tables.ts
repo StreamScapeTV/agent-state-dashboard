@@ -1,11 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  isIssueTableName,
+  type CurrentIssueDependencyRecord,
+  type CurrentIssueRecord,
+  type DashboardTableName,
+  type IssueTableName,
+} from "@/lib/agent-state-read-contract";
 import { normalizeSnapshot } from "@/lib/dashboard-model";
 import {
   DASHBOARD_TABLES,
   getDashboardSupabaseClient,
+  isMissingAdditiveTableError,
   readDashboardSnapshot,
+  readDashboardTable,
   subscribeToDashboardChanges,
 } from "@/lib/dashboard-supabase";
 import {
@@ -21,7 +30,9 @@ import {
 } from "@/lib/realtime-dashboard-state";
 import {
   applyPartialSnapshot,
+  beginTableRead,
   beginTableReads,
+  completeTableRead,
   createRequestIds,
   createTableReadStates,
   dashboardFreshness,
@@ -36,7 +47,7 @@ import {
   type TableReadStates,
   type TableRequestIds,
 } from "@/lib/table-refresh-state";
-import type { DashboardSnapshot, RawTableName } from "@/types/dashboard";
+import type { DashboardSnapshot } from "@/types/dashboard";
 
 export const BOOTSTRAP_SUBSCRIBE_GRACE_MS = 750;
 export const RECOVERY_POLL_INTERVAL_MS = 5_000;
@@ -48,18 +59,20 @@ type ReconcileReason = "bootstrap" | "reconnect" | "recovery";
 export interface DashboardTablesState {
   tableStates: TableReadStates;
   snapshot: DashboardSnapshot | null;
+  issues: CurrentIssueRecord[];
+  issueDependencies: CurrentIssueDependencyRecord[];
   connectionState: DashboardConnectionState;
   freshness: DashboardFreshness;
   lastRefresh: Date | null;
   loading: boolean;
   refreshing: boolean;
-  issueTables: RawTableName[];
+  issueTables: DashboardTableName[];
   activities: DashboardActivityItem[];
 }
 
 function nextIdsFor(
   sequenceRef: { current: TableRequestIds },
-  tables: readonly RawTableName[],
+  tables: readonly DashboardTableName[],
 ): TableRequestIds {
   const next = nextRequestIds(sequenceRef.current, tables);
   sequenceRef.current = next;
@@ -79,14 +92,48 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
   const [activities, setActivities] = useState<DashboardActivityItem[]>([]);
   const requestSequenceRef = useRef<TableRequestIds>(createRequestIds());
   const fullControllerRef = useRef<AbortController | null>(null);
+  const issueControllersRef = useRef<Partial<Record<IssueTableName, AbortController>>>({});
   const reconcilingRef = useRef(false);
   const bufferedChangesRef = useRef<DashboardRealtimeChange[]>([]);
+  const pendingIssueRefreshesRef = useRef<Set<IssueTableName>>(new Set());
   const bootstrapStartedRef = useRef(false);
   const bootstrappedRef = useRef(false);
   const socketLiveRef = useRef(false);
 
   const appendActivity = useCallback((item: DashboardActivityItem) => {
     setActivities((current) => prependActivity(current, item));
+  }, []);
+
+  const refreshIssueTable = useCallback(async (table: IssueTableName): Promise<boolean> => {
+    issueControllersRef.current[table]?.abort();
+    const controller = new AbortController();
+    issueControllersRef.current[table] = controller;
+    const requestIds = nextIdsFor(requestSequenceRef, [table]);
+    const requestId = requestIds[table];
+    setTableStates((current) => beginTableRead(current, table, requestId));
+
+    try {
+      const client = getDashboardSupabaseClient();
+      const rows = await readDashboardTable(client, table, { signal: controller.signal });
+      if (controller.signal.aborted) return false;
+      const successAt = new Date().toISOString();
+      setTableStates((current) => completeTableRead(current, table, requestId, rows, successAt));
+      return true;
+    } catch (caught) {
+      if (controller.signal.aborted) return false;
+      if (isMissingAdditiveTableError(caught, table)) {
+        const successAt = new Date().toISOString();
+        setTableStates((current) => completeTableRead(current, table, requestId, [], successAt));
+        return true;
+      }
+      const message = caught instanceof Error ? caught.message : `Dashboard read failed for ${table}`;
+      setTableStates((current) => failTableRead(current, table, requestId, message));
+      return false;
+    } finally {
+      if (issueControllersRef.current[table] === controller) {
+        delete issueControllersRef.current[table];
+      }
+    }
   }, []);
 
   const requestFullRefresh = useCallback(async (reason: ReconcileReason): Promise<boolean> => {
@@ -122,6 +169,10 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
           ? reason === "bootstrap" ? "Bootstrap snapshot converged" : "Agent State reconciled"
           : "Agent State reconciliation is partial",
       ));
+
+      const pendingIssueTables = [...pendingIssueRefreshesRef.current];
+      pendingIssueRefreshesRef.current.clear();
+      for (const table of pendingIssueTables) void refreshIssueTable(table);
       return complete;
     } catch (caught) {
       if (controller.signal.aborted) return false;
@@ -141,10 +192,19 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
         reconcilingRef.current = false;
       }
     }
-  }, [appendActivity]);
+  }, [appendActivity, refreshIssueTable]);
 
   const applyLiveChange = useCallback((change: DashboardRealtimeChange) => {
     appendActivity(activityFromRealtimeChange(change));
+
+    if (isIssueTableName(change.table)) {
+      if (reconcilingRef.current || !bootstrappedRef.current) {
+        pendingIssueRefreshesRef.current.add(change.table);
+        return;
+      }
+      void refreshIssueTable(change.table);
+      return;
+    }
 
     if (reconcilingRef.current || !bootstrappedRef.current) {
       bufferedChangesRef.current.push(change);
@@ -158,7 +218,7 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
     }
 
     setTableStates((current) => applyRealtimeChangeToTableStates(current, change).states);
-  }, [appendActivity, requestFullRefresh]);
+  }, [appendActivity, refreshIssueTable, requestFullRefresh]);
 
   useEffect(() => {
     const client = getDashboardSupabaseClient();
@@ -225,8 +285,11 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
       socketLiveRef.current = false;
       fullControllerRef.current?.abort();
       fullControllerRef.current = null;
+      for (const controller of Object.values(issueControllersRef.current)) controller?.abort();
+      issueControllersRef.current = {};
       reconcilingRef.current = false;
       bufferedChangesRef.current = [];
+      pendingIssueRefreshesRef.current.clear();
       bootstrapStartedRef.current = false;
       bootstrappedRef.current = false;
     };
@@ -257,9 +320,18 @@ export function useDashboardTables(nowMs: number): DashboardTablesState {
     });
   }, [anyData, tableStates, successAt]);
 
+  const issues = tableStates.current_issues.hasData
+    ? tableStates.current_issues.rows as CurrentIssueRecord[]
+    : [];
+  const issueDependencies = tableStates.current_issue_dependencies.hasData
+    ? tableStates.current_issue_dependencies.rows as CurrentIssueDependencyRecord[]
+    : [];
+
   return {
     tableStates,
     snapshot,
+    issues,
+    issueDependencies,
     connectionState,
     freshness,
     lastRefresh: successAt ? new Date(successAt) : null,

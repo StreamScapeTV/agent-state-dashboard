@@ -14,10 +14,10 @@ Browser on the owner-approved private access path
            -> /supabase/rest/v1/<allowed-table>   read-only Supabase REST proxy
            -> /supabase/realtime/v1/websocket     Supabase Realtime WebSocket proxy
                                                      -> Agent State Supabase
-                                                        -> five current authority tables
+                                                        -> seven current dashboard tables
 ```
 
-The browser uses the same-origin HTTPS `/supabase` gateway and never receives the real Supabase project URL or secret. NGINX injects the Kubernetes-provided Supabase secret only on upstream requests. The REST gateway reaches exactly the five current Agent State tables and accepts only `GET`, `HEAD`, and `OPTIONS`. Realtime is exposed only through the exact WebSocket route.
+The browser uses the same-origin HTTPS `/supabase` gateway and never receives the real Supabase project URL or secret. NGINX injects the Kubernetes-provided Supabase secret only on upstream requests. The REST gateway reaches exactly seven current Agent State tables and accepts only `GET`, `HEAD`, and `OPTIONS`. Realtime is exposed only through the exact WebSocket route.
 
 There is no plaintext application listener, TLS-disabled mode, local Node data service, `/api/*`, `/events`, loopback port `8788`, runtime npm, TLS sidecar, or process supervisor.
 
@@ -70,8 +70,12 @@ The browser reads exactly:
 - `current_work`
 - `current_resources`
 - `current_coordination`
+- `current_issues`
+- `current_issue_dependencies`
 
 through `/supabase/rest/v1/*`. NGINX substitutes the server-side key, clears browser authorization/method-override headers, suppresses credential-bearing proxy logs, rejects unlisted tables, and returns `405` for mutation methods.
+
+The original five tables remain the established core dashboard snapshot. `current_issues` and `current_issue_dependencies` are additive current-state datasets using the canonical unversioned contract frozen in `StreamScapeTV/agent-state-supabase#71`. During deployment ordering only, PostgREST `PGRST205` for either additive table is normalized to an empty dataset so the existing five-table dashboard remains usable before the migration is hosted. Core-table failures and auth/security/unexpected additive-table failures retain normal visible failure semantics. The dashboard does not probe schema versions, alternate table names, or alternate field mappings.
 
 Realtime uses only:
 
@@ -79,7 +83,7 @@ Realtime uses only:
 /supabase/realtime/v1/websocket
 ```
 
-Current `main` is Realtime-first: after bootstrap, healthy Postgres Changes row payloads are applied directly in memory; normal live events do not trigger a full REST snapshot. Bounded polling/reconciliation is recovery-only while connection/data convergence is unhealthy. The compact activity feed is in-memory only and is not durable Agent State history.
+Current `main` is Realtime-first: after bootstrap, healthy Postgres Changes row payloads are applied directly in memory; normal live events do not trigger a full REST snapshot. The original five tables keep the established connection-health channel, while the two additive issue tables use a separate subscription during rollout so their pre-migration absence cannot downgrade core connectivity. Bounded polling/reconciliation is recovery-only while connection/data convergence is unhealthy. The compact activity feed is in-memory only and is not durable Agent State history.
 
 This remains an observation-only product. Agent State schema/grant/publication/service changes belong in `StreamScapeTV/agent-state-supabase`.
 
